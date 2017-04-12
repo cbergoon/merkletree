@@ -1,7 +1,7 @@
 // Copyright 2017 Cameron Bergoon
 // Licensed under the MIT License, see LICENCE file for details.
 
-package merkle
+package merkletree
 
 import (
 	"bytes"
@@ -10,17 +10,23 @@ import (
 	"fmt"
 )
 
+//Content represents the data that is stored and verified by the tree. A type that
+//implements this interface can be used as an item in the tree.
 type Content interface {
 	CalculateHash() []byte
 	Equals(other Content) bool
 }
 
+//MerkleTree is the container for the tree. It holds a pointer to the root of the tree,
+//a list of pointers to the leaf nodes, and the merkle root.
 type MerkleTree struct {
 	Root       *Node
 	merkleRoot []byte
 	Leafs      []*Node
 }
 
+//Node represents a node, root, or leaf in the tree. It stores pointers to its immediate
+//relationships, a hash, the content stored if it is a leaf, and other metadata.
 type Node struct {
 	Parent *Node
 	Left   *Node
@@ -31,6 +37,8 @@ type Node struct {
 	C      Content
 }
 
+//verifyNode walks down the tree until hitting a leaf, calculating the hash at each level
+//and returning the resulting hash of Node n.
 func (n *Node) verifyNode() []byte {
 	if n.leaf {
 		return n.C.CalculateHash()
@@ -41,6 +49,7 @@ func (n *Node) verifyNode() []byte {
 	}
 }
 
+//calculateNodeHash is a helper function that calculates the hash of the node.
 func (n *Node) calculateNodeHash() []byte {
 	if n.leaf {
 		return n.C.CalculateHash()
@@ -51,6 +60,7 @@ func (n *Node) calculateNodeHash() []byte {
 	}
 }
 
+//NewTree creates a new Merkle Tree using the content cs.
 func NewTree(cs []Content) (*MerkleTree, error) {
 	root, leafs, err := buildWithContent(cs)
 	if err != nil {
@@ -64,6 +74,9 @@ func NewTree(cs []Content) (*MerkleTree, error) {
 	return t, nil
 }
 
+//buildWithContent is a helper function that for a given set of Contents, generates a
+//corresponding tree and returns the root node, a list of leaf nodes, and a possible error.
+//Returns an error if cs contains no Contents.
 func buildWithContent(cs []Content) (*Node, []*Node, error) {
 	if len(cs) == 0 {
 		return nil, nil, errors.New("Error: cannot construct tree with no content.")
@@ -84,6 +97,8 @@ func buildWithContent(cs []Content) (*Node, []*Node, error) {
 	return root, leafs, nil
 }
 
+//buildIntermediate is a helper function that for a given list of leaf nodes, constructs
+//the intermediate and root levels of the tree. Returns the resulting root node of the tree.
 func buildIntermediate(nl []*Node) *Node {
 	var nodes []*Node
 	for i := 0; i < len(nl); i += 2 {
@@ -105,10 +120,13 @@ func buildIntermediate(nl []*Node) *Node {
 	return buildIntermediate(nodes)
 }
 
+//MerkleRoot returns the unverified Merkle Root (hash of the root node) of the tree.
 func (m *MerkleTree) MerkleRoot() []byte {
 	return m.merkleRoot
 }
 
+//RebuildTree is a helper function that will rebuild the tree reusing only the content that
+//it holds in the leaves.
 func (m *MerkleTree) RebuildTree() error {
 	var cs []Content
 	for _, c := range m.Leafs {
@@ -124,6 +142,9 @@ func (m *MerkleTree) RebuildTree() error {
 	return nil
 }
 
+//RebuildTreeWith replaces the content of the tree and does a complete rebuild; while the root of
+//the tree will be replaced the MerkleTree completely survives this operation. Returns an error if the
+//list of content cs contains no entries.
 func (m *MerkleTree) RebuildTreeWith(cs []Content) error {
 	root, leafs, err := buildWithContent(cs)
 	if err != nil {
@@ -135,6 +156,8 @@ func (m *MerkleTree) RebuildTreeWith(cs []Content) error {
 	return nil
 }
 
+//VerifyTree verify tree validates the hashes at each level of the tree and returns true if the
+//resulting hash at the root of the tree matches the resulting root hash; returns false otherwise.
 func (m *MerkleTree) VerifyTree() bool {
 	calculatedMerkleRoot := m.Root.verifyNode()
 	if bytes.Compare(m.merkleRoot, calculatedMerkleRoot) == 0 {
@@ -143,6 +166,9 @@ func (m *MerkleTree) VerifyTree() bool {
 	return false
 }
 
+//VerifyContent indicates whether a given content is in the tree and the hashes are valid for that content.
+//Returns true if the expected Merkle Root is equivalent to the Merkle root calculated on the critical path
+//for a given content. Returns true if valid and false otherwise.
 func (m *MerkleTree) VerifyContent(expectedMerkleRoot []byte, content Content) bool {
 	for _, l := range m.Leafs {
 		if l.C.Equals(content) {
@@ -169,6 +195,8 @@ func (m *MerkleTree) VerifyContent(expectedMerkleRoot []byte, content Content) b
 	return false
 }
 
+//String returns a string representation of the tree. Only leaf nodes are included
+//in the output.
 func (m *MerkleTree) String() string {
 	s := ""
 	for _, l := range m.Leafs {
