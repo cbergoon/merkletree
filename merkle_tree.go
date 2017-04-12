@@ -42,22 +42,20 @@ type Node struct {
 func (n *Node) verifyNode() []byte {
 	if n.leaf {
 		return n.C.CalculateHash()
-	} else {
-		h := sha256.New()
-		h.Write(append(n.Left.verifyNode(), n.Right.verifyNode()...))
-		return h.Sum(nil)
 	}
+	h := sha256.New()
+	h.Write(append(n.Left.verifyNode(), n.Right.verifyNode()...))
+	return h.Sum(nil)
 }
 
 //calculateNodeHash is a helper function that calculates the hash of the node.
 func (n *Node) calculateNodeHash() []byte {
 	if n.leaf {
 		return n.C.CalculateHash()
-	} else {
-		h := sha256.New()
-		h.Write(append(n.Left.Hash, n.Right.Hash...))
-		return h.Sum(nil)
 	}
+	h := sha256.New()
+	h.Write(append(n.Left.Hash, n.Right.Hash...))
+	return h.Sum(nil)
 }
 
 //NewTree creates a new Merkle Tree using the content cs.
