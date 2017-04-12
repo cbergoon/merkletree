@@ -31,6 +31,26 @@ type Node struct {
 	C      Content
 }
 
+func (n *Node) verifyNode() []byte {
+	if n.leaf {
+		return n.C.CalculateHash()
+	} else {
+		h := sha256.New()
+		h.Write(append(n.Left.verifyNode(), n.Right.verifyNode()...))
+		return h.Sum(nil)
+	}
+}
+
+func (n *Node) calculateNodeHash() []byte {
+	if n.leaf {
+		return n.C.CalculateHash()
+	} else {
+		h := sha256.New()
+		h.Write(append(n.Left.Hash, n.Right.Hash...))
+		return h.Sum(nil)
+	}
+}
+
 func NewTree(cs []Content) (*MerkleTree, error) {
 	root, leafs, err := buildWithContent(cs)
 	if err != nil {
@@ -121,26 +141,6 @@ func (m *MerkleTree) VerifyTree() bool {
 		return true
 	}
 	return false
-}
-
-func (n *Node) verifyNode() []byte {
-	if n.leaf {
-		return n.C.CalculateHash()
-	} else {
-		h := sha256.New()
-		h.Write(append(n.Left.verifyNode(), n.Right.verifyNode()...))
-		return h.Sum(nil)
-	}
-}
-
-func (n *Node) calculateNodeHash() []byte {
-	if n.leaf {
-		return n.C.CalculateHash()
-	} else {
-		h := sha256.New()
-		h.Write(append(n.Left.Hash, n.Right.Hash...))
-		return h.Sum(nil)
-	}
 }
 
 func (m *MerkleTree) VerifyContent(expectedMerkleRoot []byte, content Content) bool {

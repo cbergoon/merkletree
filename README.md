@@ -11,6 +11,11 @@ the contents of a set data.
 
 See the docs [here](https://godoc.org/github.com/cbergoon/merkletree).
 
+#### Install
+```
+go get github.com/cbergoon/merkletree
+```
+
 #### Example Usage
 Below is an example that makes use of the entire API - its quite small.
 ```go
@@ -18,8 +23,50 @@ package main
 
 import "fmt"
 
+//TestContent implements the Content interface provided by merkletree and represents the content stored in the tree.
+type TestContent struct {
+	x string
+}
+
+//CalculateHash hashes the values of a TestContent
+func (t TestContent) CalculateHash() []byte {
+	h := sha256.New()
+	h.Write([]byte(t.x))
+	return h.Sum(nil)
+}
+
+//Equals tests for equality of two Contents
+func (t TestContent) Equals(other merkle.Content) bool {
+	return t.x == other.(TestContent).x
+}
+
 func main() {
-    fmt.Println("Hello, World!"
+
+    //Build list of Content to build tree
+    var list []merkle.Content
+    list = append(list, TestContent{x: "Hello"})
+    list = append(list, TestContent{x: "Hi"})
+    list = append(list, TestContent{x: "Hey"})
+    list = append(list, TestContent{x: "Hola"})
+
+    //Create a new Merkle Tree from the list of Content
+    t, _ := merkle.NewTree(list)
+
+    //Get the Merkle Root of the tree
+    mr := t.MerkleRoot()
+    fmt.Println(mr)
+
+    //Verify the entire tree (hashes for each node) is valid
+    vt := t.VerifyTree()
+    fmt.Println("Verify Tree: ", vt)
+
+    //Verify a specific content in in the tree
+    vc := t.VerifyContent(t.MerkleRoot(), list[0])
+    fmt.Println("Verify Content: ", vc)
+
+    //String representation
+    fmt.Println(t)
+
 }
 ```
 
