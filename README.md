@@ -16,6 +16,8 @@ the tree. This property allows the tree to be reproduced and thus verified by on
 of the tree. The benefit of the tree structure is verifying any single content entry in the tree will require only
 nlog2(n) steps in the worst case.
 
+#### Documentation 
+
 See the docs [here](https://godoc.org/github.com/cbergoon/merkletree).
 
 #### Install
