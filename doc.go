@@ -1,8 +1,7 @@
 // Copyright 2017 Cameron Bergoon
 // Licensed under the MIT License, see LICENCE file for details.
 
-/*
-	Package merkletree implements a Merkle Tree capable of storing arbitrary content.
+/*	Package merkletree implements a Merkle Tree capable of storing arbitrary content.
 
 	A Merkle Tree is a hash tree that provides an efficient way to verify the contents
 	of a set data are present and untampered with. At its core, a Merkle Tree is
