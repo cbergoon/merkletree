@@ -64,6 +64,26 @@ var table = []struct {
 	{
 		contents: []Content{
 			TestContent{
+				x: "Hello",
+			},
+			TestContent{
+				x: "Hi",
+			},
+			TestContent{
+				x: "Hey",
+			},
+			TestContent{
+				x: "Greetings",
+			},
+			TestContent{
+				x: "Hola",
+			},
+		},
+		expectedHash: []byte{46, 216, 115, 174, 13, 210, 55, 39, 119, 197, 122, 104, 93, 144, 112, 131, 202, 151, 41, 14, 80, 143, 21, 71, 140, 169, 139, 173, 50, 37, 235, 188},
+	},
+	{
+		contents: []Content{
+			TestContent{
 				x: "123",
 			},
 			TestContent{
@@ -89,6 +109,38 @@ var table = []struct {
 			},
 		},
 		expectedHash: []byte{30, 76, 61, 40, 106, 173, 169, 183, 149, 2, 157, 246, 162, 218, 4, 70, 153, 148, 62, 162, 90, 24, 173, 250, 41, 149, 173, 121, 141, 187, 146, 43},
+	},
+	{
+		contents: []Content{
+			TestContent{
+				x: "123",
+			},
+			TestContent{
+				x: "234",
+			},
+			TestContent{
+				x: "345",
+			},
+			TestContent{
+				x: "456",
+			},
+			TestContent{
+				x: "1123",
+			},
+			TestContent{
+				x: "2234",
+			},
+			TestContent{
+				x: "3345",
+			},
+			TestContent{
+				x: "4456",
+			},
+			TestContent{
+				x: "4456",
+			},
+		},
+		expectedHash: []byte{75, 116, 113, 234, 23, 149, 100, 110, 172, 129, 124, 248, 163, 158, 148, 160, 243, 161, 32, 227, 175, 254, 74, 214, 146, 64, 185, 124, 116, 137, 108, 37},
 	},
 }
 
