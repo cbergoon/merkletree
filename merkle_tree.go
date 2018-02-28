@@ -92,9 +92,9 @@ func buildWithContent(cs []Content) (*Node, []*Node, error) {
 			Hash: leafs[len(leafs)-1].Hash,
 			C:    leafs[len(leafs)-1].C,
 			leaf: true,
+			dup: true, 
 		}
 		leafs = append(leafs, duplicate)
-		leafs[len(leafs)-1].dup = true
 	}
 	root := buildIntermediate(leafs)
 	return root, leafs, nil
