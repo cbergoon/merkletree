@@ -88,7 +88,12 @@ func buildWithContent(cs []Content) (*Node, []*Node, error) {
 		})
 	}
 	if len(leafs)%2 == 1 {
-		leafs = append(leafs, leafs[len(leafs)-1])
+		duplicate := &Node{
+			Hash: leafs[len(leafs)-1].Hash,
+			C:    leafs[len(leafs)-1].C,
+			leaf: true,
+		}
+		leafs = append(leafs, duplicate)
 		leafs[len(leafs)-1].dup = true
 	}
 	root := buildIntermediate(leafs)
@@ -101,16 +106,20 @@ func buildIntermediate(nl []*Node) *Node {
 	var nodes []*Node
 	for i := 0; i < len(nl); i += 2 {
 		h := sha256.New()
-		chash := append(nl[i].Hash, nl[i+1].Hash...)
+		var left, right int = i, i+1
+		if i+1 == len(nl) {
+			right = i
+		}
+		chash := append(nl[left].Hash, nl[right].Hash...)
 		h.Write(chash)
 		n := &Node{
-			Left:  nl[i],
-			Right: nl[i+1],
+			Left:  nl[left],
+			Right: nl[right],
 			Hash:  h.Sum(nil),
 		}
 		nodes = append(nodes, n)
-		nl[i].Parent = n
-		nl[i+1].Parent = n
+		nl[left].Parent = n
+		nl[right].Parent = n
 		if len(nl) == 2 {
 			return n
 		}
