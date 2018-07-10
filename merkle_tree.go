@@ -13,7 +13,7 @@ import (
 //Content represents the data that is stored and verified by the tree. A type that
 //implements this interface can be used as an item in the tree.
 type Content interface {
-	CalculateHashBytes() ([]byte, error)
+	CalculateHash() ([]byte, error)
 	Equals(other Content) (bool, error)
 }
 
@@ -41,7 +41,7 @@ type Node struct {
 //and returning the resulting hash of Node n.
 func (n *Node) verifyNode() ([]byte, error) {
 	if n.leaf {
-		return n.C.CalculateHashBytes()
+		return n.C.CalculateHash()
 	}
 	rightBytes, err := n.Right.verifyNode()
 	if err != nil {
@@ -64,7 +64,7 @@ func (n *Node) verifyNode() ([]byte, error) {
 //calculateNodeHash is a helper function that calculates the hash of the node.
 func (n *Node) calculateNodeHash() ([]byte, error) {
 	if n.leaf {
-		return n.C.CalculateHashBytes()
+		return n.C.CalculateHash()
 	}
 
 	h := sha256.New()
@@ -98,7 +98,7 @@ func buildWithContent(cs []Content) (*Node, []*Node, error) {
 	}
 	var leafs []*Node
 	for _, c := range cs {
-		hash, err := c.CalculateHashBytes()
+		hash, err := c.CalculateHash()
 		if err != nil {
 			return nil, nil, err
 		}

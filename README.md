@@ -42,8 +42,8 @@ type TestContent struct {
 	x string
 }
 
-//CalculateHashBytes hashes the values of a TestContent
-func (t TestContent) CalculateHashBytes() ([]byte, error) {
+//CalculateHash hashes the values of a TestContent
+func (t TestContent) CalculateHash() ([]byte, error) {
 	h := sha256.New()
 	if _, err := h.Write([]byte(t.x)); err != nil {
     return nil, err
