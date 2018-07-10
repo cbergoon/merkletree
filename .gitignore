@@ -24,3 +24,9 @@ _testmain.go
 *.prof
 
 /.idea
+
+# vim
+.swp
+*~
+*.swp
+*.swo
