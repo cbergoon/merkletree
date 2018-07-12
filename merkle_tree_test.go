@@ -15,15 +15,18 @@ type TestContent struct {
 }
 
 //CalculateHash hashes the values of a TestContent
-func (t TestContent) CalculateHash() []byte {
+func (t TestContent) CalculateHash() ([]byte, error) {
 	h := sha256.New()
-	h.Write([]byte(t.x))
-	return h.Sum(nil)
+	if _, err := h.Write([]byte(t.x)); err != nil {
+		return nil, err
+	}
+
+	return h.Sum(nil), nil
 }
 
 //Equals tests for equality of two Contents
-func (t TestContent) Equals(other Content) bool {
-	return t.x == other.(TestContent).x
+func (t TestContent) Equals(other Content) (bool, error) {
+	return t.x == other.(TestContent).x, nil
 }
 
 var table = []struct {
@@ -206,13 +209,19 @@ func TestMerkleTree_VerifyTree(t *testing.T) {
 		if err != nil {
 			t.Error("error: unexpected error:  ", err)
 		}
-		v1 := tree.VerifyTree()
+		v1, err := tree.VerifyTree()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if v1 != true {
 			t.Error("error: expected tree to be valid")
 		}
 		tree.Root.Hash = []byte{1}
 		tree.merkleRoot = []byte{1}
-		v2 := tree.VerifyTree()
+		v2, err := tree.VerifyTree()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if v2 != false {
 			t.Error("error: expected tree to be invalid")
 		}
@@ -226,19 +235,28 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 			t.Error("error: unexpected error:  ", err)
 		}
 		if len(table[i].contents) > 0 {
-			v := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[0])
+			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[0])
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !v {
 				t.Error("error: expected valid content")
 			}
 		}
 		if len(table[i].contents) > 1 {
-			v := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[1])
+			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[1])
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !v {
 				t.Error("error: expected valid content")
 			}
 		}
 		if len(table[i].contents) > 2 {
-			v := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[2])
+			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[2])
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !v {
 				t.Error("error: expected valid content")
 			}
@@ -246,13 +264,21 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 		if len(table[i].contents) > 0 {
 			tree.Root.Hash = []byte{1}
 			tree.merkleRoot = []byte{1}
-			v := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[0])
+			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[0])
+			if err != nil {
+				t.Fatal(err)
+			}
 			if v {
 				t.Error("error: expected invalid content")
 			}
-			tree.RebuildTree()
+			if err := tree.RebuildTree(); err != nil {
+				t.Fatal(err)
+			}
 		}
-		v := tree.VerifyContent(tree.MerkleRoot(), TestContent{x: "NotInTestTable"})
+		v, err := tree.VerifyContent(tree.MerkleRoot(), TestContent{x: "NotInTestTable"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if v {
 			t.Error("error: expected invalid content")
 		}
