@@ -235,7 +235,7 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 			t.Error("error: unexpected error:  ", err)
 		}
 		if len(table[i].contents) > 0 {
-			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[0])
+			v, err := tree.VerifyContent(table[i].contents[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -244,7 +244,7 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 			}
 		}
 		if len(table[i].contents) > 1 {
-			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[1])
+			v, err := tree.VerifyContent(table[i].contents[1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -253,7 +253,7 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 			}
 		}
 		if len(table[i].contents) > 2 {
-			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[2])
+			v, err := tree.VerifyContent(table[i].contents[2])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -264,7 +264,7 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 		if len(table[i].contents) > 0 {
 			tree.Root.Hash = []byte{1}
 			tree.merkleRoot = []byte{1}
-			v, err := tree.VerifyContent(tree.MerkleRoot(), table[i].contents[0])
+			v, err := tree.VerifyContent(table[i].contents[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -275,7 +275,7 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		v, err := tree.VerifyContent(tree.MerkleRoot(), TestContent{x: "NotInTestTable"})
+		v, err := tree.VerifyContent(TestContent{x: "NotInTestTable"})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -83,7 +83,7 @@ func main() {
   log.Println("Verify Tree: ", vt)
 
   //Verify a specific content in in the tree
-  vc, err := t.VerifyContent(t.MerkleRoot(), list[0])
+  vc, err := t.VerifyContent(list[0])
   if err != nil {
     log.Fatal(err)
   }

@@ -208,7 +208,7 @@ func (m *MerkleTree) VerifyTree() (bool, error) {
 //VerifyContent indicates whether a given content is in the tree and the hashes are valid for that content.
 //Returns true if the expected Merkle Root is equivalent to the Merkle root calculated on the critical path
 //for a given content. Returns true if valid and false otherwise.
-func (m *MerkleTree) VerifyContent(expectedMerkleRoot []byte, content Content) (bool, error) {
+func (m *MerkleTree) VerifyContent(content Content) (bool, error) {
 	for _, l := range m.Leafs {
 		ok, err := l.C.Equals(content)
 		if err != nil {
