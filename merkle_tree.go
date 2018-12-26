@@ -228,23 +228,14 @@ func (m *MerkleTree) VerifyContent(content Content) (bool, error) {
 				if err != nil {
 					return false, err
 				}
-				if currentParent.Left.leaf && currentParent.Right.leaf {
-					if _, err := h.Write(append(leftBytes, rightBytes...)); err != nil {
-						return false, err
-					}
-					if bytes.Compare(h.Sum(nil), currentParent.Hash) != 0 {
-						return false, nil
-					}
-					currentParent = currentParent.Parent
-				} else {
-					if _, err := h.Write(append(leftBytes, rightBytes...)); err != nil {
-						return false, err
-					}
-					if bytes.Compare(h.Sum(nil), currentParent.Hash) != 0 {
-						return false, nil
-					}
-					currentParent = currentParent.Parent
+
+				if _, err := h.Write(append(leftBytes, rightBytes...)); err != nil {
+					return false, err
 				}
+				if bytes.Compare(h.Sum(nil), currentParent.Hash) != 0 {
+					return false, nil
+				}
+				currentParent = currentParent.Parent
 			}
 			return true, nil
 		}
