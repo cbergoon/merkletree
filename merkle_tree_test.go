@@ -24,6 +24,15 @@ func (t TestContent) CalculateHash() ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
+func calHash(hash []byte) ([]byte, error) {
+	h := sha256.New()
+	if _, err := h.Write(hash); err != nil {
+		return nil, err
+	}
+
+	return h.Sum(nil), nil
+}
+
 //Equals tests for equality of two Contents
 func (t TestContent) Equals(other Content) (bool, error) {
 	return t.x == other.(TestContent).x, nil
@@ -293,6 +302,41 @@ func TestMerkleTree_String(t *testing.T) {
 		}
 		if tree.String() == "" {
 			t.Error("error: expected not empty string")
+		}
+	}
+}
+
+func TestMerkleTree_MerklePath(t *testing.T) {
+	for i := 0; i < len(table); i++ {
+		tree, err := NewTree(table[i].contents)
+		if err != nil {
+			t.Error("error: unexpected error:  ", err)
+		}
+		for j := 0; j < len(table[i].contents); j++ {
+			merklePath, index, _ := tree.GetMerklePath(table[i].contents[j])
+
+			hash, err := tree.Leafs[j].calculateNodeHash()
+			if err != nil {
+				t.Error("error: calculateNodeHash error:  ", err)
+			}
+			h := sha256.New()
+			for k := 0; k < len(merklePath); k ++ {
+				if index[k] == 1 {
+					hash = append(hash, merklePath[k]...)
+				} else {
+					hash = append(merklePath[k], hash...)
+				}
+				if _, err := h.Write(hash); err != nil {
+					t.Error("error: Write error:  ", err)
+				}
+				hash, err = calHash(hash)
+				if err != nil {
+					t.Error("error: calHash error:  ", err)
+				}
+			}
+			if bytes.Compare(tree.MerkleRoot(), hash) != 0 {
+				t.Errorf("error: expected hash equal to %v got %v", hash, tree.MerkleRoot())
+			}
 		}
 	}
 }

@@ -89,6 +89,35 @@ func NewTree(cs []Content) (*MerkleTree, error) {
 	return t, nil
 }
 
+// GetMerklePath: Get Merkle path and indexes(left leaf or right leaf)
+func (m *MerkleTree) GetMerklePath(content Content) ([][]byte, []int64, error) {
+	for _, current := range m.Leafs {
+		ok, err := current.C.Equals(content)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if ok {
+			currentParent := current.Parent
+			var merklePath [][]byte
+			var index []int64
+			for currentParent != nil {
+				if bytes.Equal(currentParent.Left.Hash, current.Hash) {
+					merklePath = append(merklePath, currentParent.Right.Hash)
+					index = append(index, 1)	// right leaf
+				} else {
+					merklePath = append(merklePath, currentParent.Left.Hash)
+					index = append(index, 0)	// left leaf
+				}
+				current = currentParent
+				currentParent = currentParent.Parent
+			}
+			return merklePath, index, nil
+		}
+	}
+	return nil, nil, nil
+}
+
 //buildWithContent is a helper function that for a given set of Contents, generates a
 //corresponding tree and returns the root node, a list of leaf nodes, and a possible error.
 //Returns an error if cs contains no Contents.
