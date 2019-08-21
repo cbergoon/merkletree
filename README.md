@@ -95,6 +95,9 @@ func main() {
 }
 
 ```
+#### sample
+![merkletree](merkletree.png)
+
 
 #### License
 This project is licensed under the MIT License.
