@@ -95,7 +95,7 @@ func main() {
 }
 
 ```
-#### sample
+#### Sample
 ![merkletree](merkle_tree.png)
 
 
