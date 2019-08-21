@@ -96,7 +96,7 @@ func main() {
 
 ```
 #### sample
-![merkletree](merkletree.png)
+![merkletree](merkle_tree.png)
 
 
 #### License
