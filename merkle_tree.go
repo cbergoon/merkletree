@@ -5,11 +5,10 @@ package merkletree
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"hash"
-
-	"golang.org/x/crypto/sha3"
 )
 
 //Content represents the data that is stored and verified by the tree. A type that
@@ -81,7 +80,7 @@ func (n *Node) calculateNodeHash() ([]byte, error) {
 
 //NewTree creates a new Merkle Tree using the content cs.
 func NewTree(cs []Content) (*MerkleTree, error) {
-	var defaultHashStrategy = sha3.New256
+	var defaultHashStrategy = sha256.New
 	t := &MerkleTree{
 		hashStrategy: defaultHashStrategy,
 	}
@@ -254,7 +253,7 @@ func (m *MerkleTree) VerifyTree() (bool, error) {
 		return false, err
 	}
 
-	if bytes.Compare(m.merkleRoot, calculatedMerkleRoot) == 0 {
+	if bytes.Equal(m.merkleRoot, calculatedMerkleRoot) {
 		return true, nil
 	}
 	return false, nil
@@ -287,7 +286,7 @@ func (m *MerkleTree) VerifyContent(content Content) (bool, error) {
 				if _, err := h.Write(append(leftBytes, rightBytes...)); err != nil {
 					return false, err
 				}
-				if bytes.Compare(h.Sum(nil), currentParent.Hash) != 0 {
+				if !bytes.Equal(h.Sum(nil), currentParent.Hash) {
 					return false, nil
 				}
 				currentParent = currentParent.Parent
