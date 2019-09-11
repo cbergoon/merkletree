@@ -18,11 +18,11 @@ nlog2(n) steps in the worst case.
 
 #### Documentation 
 
-See the docs [here](https://godoc.org/github.com/cbergoon/merkletree).
+See the docs [here](https://godoc.org/github.com/rhizomplatform/merkletree).
 
 #### Install
 ```
-go get github.com/cbergoon/merkletree
+go get github.com/rhizomplatform/merkletree
 ```
 
 #### Example Usage
@@ -31,10 +31,11 @@ Below is an example that makes use of the entire API - its quite small.
 package main
 
 import (
-  "crypto/sha256"
   "log"
 
-  "github.com/cbergoon/merkletree"
+  "golang.org/x/crypto/sha3"
+
+  "github.com/rhizomplatform/merkletree"
 )
 
 //TestContent implements the Content interface provided by merkletree and represents the content stored in the tree.
@@ -44,7 +45,7 @@ type TestContent struct {
 
 //CalculateHash hashes the values of a TestContent
 func (t TestContent) CalculateHash() ([]byte, error) {
-  h := sha256.New()
+  h := sha3.New256()
   if _, err := h.Write([]byte(t.x)); err != nil {
     return nil, err
   }
