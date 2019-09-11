@@ -6,19 +6,29 @@ package merkletree
 import (
 	"bytes"
 	"crypto/md5"
-	"crypto/sha256"
 	"hash"
 	"testing"
+
+	"golang.org/x/crypto/sha3"
 )
 
-//TestSHA256Content implements the Content interface provided by merkletree and represents the content stored in the tree.
-type TestSHA256Content struct {
+//TestSHAContent implements the Content interface provided by merkletree and represents the content stored in the tree.
+type TestSHAContent struct {
 	x string
 }
 
+const defaultHashStrategyName string = "sha3-256"
+
+var defaultHashStrategy (func() hash.Hash) = sha3.New256
+
+//Generator default generator
+func Generator() hash.Hash {
+	return defaultHashStrategy()
+}
+
 //CalculateHash hashes the values of a TestSHA256Content
-func (t TestSHA256Content) CalculateHash() ([]byte, error) {
-	h := sha256.New()
+func (t TestSHAContent) CalculateHash() ([]byte, error) {
+	h := Generator()
 	if _, err := h.Write([]byte(t.x)); err != nil {
 		return nil, err
 	}
@@ -27,8 +37,8 @@ func (t TestSHA256Content) CalculateHash() ([]byte, error) {
 }
 
 //Equals tests for equality of two Contents
-func (t TestSHA256Content) Equals(other Content) (bool, error) {
-	return t.x == other.(TestSHA256Content).x, nil
+func (t TestSHAContent) Equals(other Content) (bool, error) {
+	return t.x == other.(TestSHAContent).x, nil
 }
 
 //TestContent implements the Content interface provided by merkletree and represents the content stored in the tree.
@@ -71,140 +81,140 @@ var table = []struct {
 }{
 	{
 		testCaseId:          0,
-		hashStrategy:        sha256.New,
-		hashStrategyName:    "sha256",
+		hashStrategy:        defaultHashStrategy,
+		hashStrategyName:    defaultHashStrategyName,
 		defaultHashStrategy: true,
 		contents: []Content{
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hello",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hi",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hey",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hola",
 			},
 		},
-		notInContents: TestSHA256Content{x: "NotInTestTable"},
-		expectedHash:  []byte{95, 48, 204, 128, 19, 59, 147, 148, 21, 110, 36, 178, 51, 240, 196, 190, 50, 178, 78, 68, 187, 51, 129, 240, 44, 123, 165, 38, 25, 208, 254, 188},
+		notInContents: TestSHAContent{x: "NotInTestTable"},
+		expectedHash:  []byte{32, 188, 172, 153, 245, 171, 51, 156, 161, 201, 80, 58, 155, 97, 1, 79, 86, 175, 244, 91, 137, 105, 238, 155, 233, 126, 112, 151, 195, 101, 37, 220},
 	},
 	{
 		testCaseId:          1,
-		hashStrategy:        sha256.New,
-		hashStrategyName:    "sha256",
+		hashStrategy:        defaultHashStrategy,
+		hashStrategyName:    defaultHashStrategyName,
 		defaultHashStrategy: true,
 		contents: []Content{
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hello",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hi",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hey",
 			},
 		},
-		notInContents: TestSHA256Content{x: "NotInTestTable"},
-		expectedHash:  []byte{189, 214, 55, 197, 35, 237, 92, 14, 171, 121, 43, 152, 109, 177, 136, 80, 194, 57, 162, 226, 56, 2, 179, 106, 255, 38, 187, 104, 251, 63, 224, 8},
+		notInContents: TestSHAContent{x: "NotInTestTable"},
+		expectedHash:  []byte{246, 99, 11, 12, 67, 200, 116, 99, 203, 3, 108, 4, 0, 233, 95, 255, 15, 246, 248, 96, 75, 108, 103, 113, 133, 191, 75, 34, 210, 198, 105, 142},
 	},
 	{
 		testCaseId:          2,
-		hashStrategy:        sha256.New,
-		hashStrategyName:    "sha256",
+		hashStrategy:        defaultHashStrategy,
+		hashStrategyName:    defaultHashStrategyName,
 		defaultHashStrategy: true,
 		contents: []Content{
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hello",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hi",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hey",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Greetings",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "Hola",
 			},
 		},
-		notInContents: TestSHA256Content{x: "NotInTestTable"},
-		expectedHash:  []byte{46, 216, 115, 174, 13, 210, 55, 39, 119, 197, 122, 104, 93, 144, 112, 131, 202, 151, 41, 14, 80, 143, 21, 71, 140, 169, 139, 173, 50, 37, 235, 188},
+		notInContents: TestSHAContent{x: "NotInTestTable"},
+		expectedHash:  []byte{136, 215, 127, 182, 176, 143, 79, 68, 202, 214, 24, 78, 62, 145, 30, 204, 179, 170, 168, 186, 229, 63, 48, 193, 209, 165, 91, 208, 45, 255, 197, 224},
 	},
 	{
 		testCaseId:          3,
-		hashStrategy:        sha256.New,
-		hashStrategyName:    "sha256",
+		hashStrategy:        defaultHashStrategy,
+		hashStrategyName:    defaultHashStrategyName,
 		defaultHashStrategy: true,
 		contents: []Content{
-			TestSHA256Content{
+			TestSHAContent{
 				x: "123",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "234",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "345",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "456",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "1123",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "2234",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "3345",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "4456",
 			},
 		},
-		notInContents: TestSHA256Content{x: "NotInTestTable"},
-		expectedHash:  []byte{30, 76, 61, 40, 106, 173, 169, 183, 149, 2, 157, 246, 162, 218, 4, 70, 153, 148, 62, 162, 90, 24, 173, 250, 41, 149, 173, 121, 141, 187, 146, 43},
+		notInContents: TestSHAContent{x: "NotInTestTable"},
+		expectedHash:  []byte{34, 206, 114, 216, 133, 246, 9, 62, 39, 249, 11, 159, 238, 217, 98, 5, 48, 221, 167, 237, 59, 192, 140, 138, 196, 128, 147, 66, 116, 197, 192, 137},
 	},
 	{
 		testCaseId:          4,
-		hashStrategy:        sha256.New,
-		hashStrategyName:    "sha256",
+		hashStrategy:        defaultHashStrategy,
+		hashStrategyName:    defaultHashStrategyName,
 		defaultHashStrategy: true,
 		contents: []Content{
-			TestSHA256Content{
+			TestSHAContent{
 				x: "123",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "234",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "345",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "456",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "1123",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "2234",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "3345",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "4456",
 			},
-			TestSHA256Content{
+			TestSHAContent{
 				x: "5567",
 			},
 		},
-		notInContents: TestSHA256Content{x: "NotInTestTable"},
-		expectedHash:  []byte{143, 37, 161, 192, 69, 241, 248, 56, 169, 87, 79, 145, 37, 155, 51, 159, 209, 129, 164, 140, 130, 167, 16, 182, 133, 205, 126, 55, 237, 188, 89, 236},
+		notInContents: TestSHAContent{x: "NotInTestTable"},
+		expectedHash:  []byte{131, 208, 129, 139, 57, 219, 227, 204, 170, 132, 60, 169, 110, 79, 215, 25, 28, 199, 4, 70, 205, 134, 183, 26, 185, 129, 117, 26, 155, 193, 111, 12},
 	},
 	{
 		testCaseId:          5,
@@ -568,7 +578,7 @@ func TestMerkleTree_MerklePath(t *testing.T) {
 			if err != nil {
 				t.Errorf("[case:%d] error: calculateNodeHash error: %v", table[i].testCaseId, err)
 			}
-			h := sha256.New()
+			h := Generator()
 			for k := 0; k < len(merklePath); k++ {
 				if index[k] == 1 {
 					hash = append(hash, merklePath[k]...)
