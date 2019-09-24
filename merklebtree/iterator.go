@@ -4,17 +4,11 @@
 
 package merklebtree
 
-import "github.com/emirpasic/gods/containers"
-
-func assertIteratorImplementation() {
-	var _ containers.ReverseIteratorWithKey = (*Iterator)(nil)
-}
-
 // Iterator holding the iterator's state
 type Iterator struct {
 	tree     *Tree
 	node     *Node
-	entry    *Entry
+	entry    *Content
 	position position
 }
 
@@ -45,12 +39,12 @@ func (iterator *Iterator) Next() bool {
 			goto end
 		}
 		iterator.node = left
-		iterator.entry = left.Entries[0]
+		iterator.entry = left.Contents[0]
 		goto between
 	}
 	{
 		// Find current entry position in current node
-		e, _ := iterator.tree.search(iterator.node, iterator.entry.Key)
+		e, _ := iterator.tree.search(iterator.node, *iterator.entry)
 		// Try to go down to the child right of the current entry
 		if e+1 < len(iterator.node.Children) {
 			iterator.node = iterator.node.Children[e+1]
@@ -59,23 +53,23 @@ func (iterator *Iterator) Next() bool {
 				iterator.node = iterator.node.Children[0]
 			}
 			// Return the left-most entry
-			iterator.entry = iterator.node.Entries[0]
+			iterator.entry = iterator.node.Contents[0]
 			goto between
 		}
 		// Above assures that we have reached a leaf node, so return the next entry in current node (if any)
-		if e+1 < len(iterator.node.Entries) {
-			iterator.entry = iterator.node.Entries[e+1]
+		if e+1 < len(iterator.node.Contents) {
+			iterator.entry = iterator.node.Contents[e+1]
 			goto between
 		}
 	}
-	// Reached leaf node and there are no entries to the right of the current entry, so go up to the parent
+	// Reached leaf node and there are no contents to the right of the current entry, so go up to the parent
 	for iterator.node.Parent != nil {
 		iterator.node = iterator.node.Parent
 		// Find next entry position in current node (note: search returns the first equal or bigger than entry)
-		e, _ := iterator.tree.search(iterator.node, iterator.entry.Key)
+		e, _ := iterator.tree.search(iterator.node, *iterator.entry)
 		// Check that there is a next entry position in current node
-		if e < len(iterator.node.Entries) {
-			iterator.entry = iterator.node.Entries[e]
+		if e < len(iterator.node.Contents) {
+			iterator.entry = iterator.node.Contents[e]
 			goto between
 		}
 	}
@@ -104,12 +98,12 @@ func (iterator *Iterator) Prev() bool {
 			goto begin
 		}
 		iterator.node = right
-		iterator.entry = right.Entries[len(right.Entries)-1]
+		iterator.entry = right.Contents[len(right.Contents)-1]
 		goto between
 	}
 	{
 		// Find current entry position in current node
-		e, _ := iterator.tree.search(iterator.node, iterator.entry.Key)
+		e, _ := iterator.tree.search(iterator.node, *iterator.entry)
 		// Try to go down to the child left of the current entry
 		if e < len(iterator.node.Children) {
 			iterator.node = iterator.node.Children[e]
@@ -118,23 +112,23 @@ func (iterator *Iterator) Prev() bool {
 				iterator.node = iterator.node.Children[len(iterator.node.Children)-1]
 			}
 			// Return the right-most entry
-			iterator.entry = iterator.node.Entries[len(iterator.node.Entries)-1]
+			iterator.entry = iterator.node.Contents[len(iterator.node.Contents)-1]
 			goto between
 		}
 		// Above assures that we have reached a leaf node, so return the previous entry in current node (if any)
 		if e-1 >= 0 {
-			iterator.entry = iterator.node.Entries[e-1]
+			iterator.entry = iterator.node.Contents[e-1]
 			goto between
 		}
 	}
-	// Reached leaf node and there are no entries to the left of the current entry, so go up to the parent
+	// Reached leaf node and there are no contents to the left of the current entry, so go up to the parent
 	for iterator.node.Parent != nil {
 		iterator.node = iterator.node.Parent
 		// Find previous entry position in current node (note: search returns the first equal or bigger than entry)
-		e, _ := iterator.tree.search(iterator.node, iterator.entry.Key)
+		e, _ := iterator.tree.search(iterator.node, *iterator.entry)
 		// Check that there is a previous entry position in current node
 		if e-1 >= 0 {
-			iterator.entry = iterator.node.Entries[e-1]
+			iterator.entry = iterator.node.Contents[e-1]
 			goto between
 		}
 	}
@@ -148,16 +142,10 @@ between:
 	return true
 }
 
-// Value returns the current element's value.
-// Does not modify the state of the iterator.
-func (iterator *Iterator) Value() interface{} {
-	return iterator.entry.Value
-}
-
 // Key returns the current element's key.
 // Does not modify the state of the iterator.
-func (iterator *Iterator) Key() interface{} {
-	return iterator.entry.Key
+func (iterator *Iterator) Item() Content {
+	return *iterator.entry
 }
 
 // Begin resets the iterator to its initial state (one-before-first)

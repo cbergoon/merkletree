@@ -9,18 +9,78 @@ import (
 	"testing"
 )
 
+// Int implements the Item interface for integers.
+type Item struct {
+	key   int
+	value string
+}
+
+type Item2 struct {
+	key   int
+	value int
+}
+
+type Item3 struct {
+	key   int
+	value interface{}
+}
+
+type TestData struct {
+	Item
+	result bool
+}
+
+// IntComparator provides a basic comparison on int
+func (a Item) Comparator(b Content) int {
+	bAsserted := b.(Item)
+	switch {
+	case a.key > bAsserted.key:
+		return 1
+	case a.key < bAsserted.key:
+		return -1
+	default:
+		return 0
+	}
+}
+
+// IntComparator provides a basic comparison on int
+func (a Item2) Comparator(b Content) int {
+	bAsserted := b.(Item2)
+	switch {
+	case a.key > bAsserted.key:
+		return 1
+	case a.key < bAsserted.key:
+		return -1
+	default:
+		return 0
+	}
+}
+
+// IntComparator provides a basic comparison on int
+func (a Item3) Comparator(b Content) int {
+	bAsserted := b.(Item3)
+	switch {
+	case a.key > bAsserted.key:
+		return 1
+	case a.key < bAsserted.key:
+		return -1
+	default:
+		return 0
+	}
+}
+
 func TestBTreeGet1(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(1, "a")
-	tree.Put(2, "b")
-	tree.Put(3, "c")
-	tree.Put(4, "d")
-	tree.Put(5, "e")
-	tree.Put(6, "f")
-	tree.Put(7, "g")
+	tree := NewWith(3)
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 2, value: "b"})
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 4, value: "d"})
+	tree.Put(Item{key: 5, value: "e"})
+	tree.Put(Item{key: 6, value: "f"})
+	tree.Put(Item{key: 7, value: "g"})
 
 	tests := [][]interface{}{
-		{0, nil, false},
+		{0, "", false},
 		{1, "a", true},
 		{2, "b", true},
 		{3, "c", true},
@@ -28,31 +88,33 @@ func TestBTreeGet1(t *testing.T) {
 		{5, "e", true},
 		{6, "f", true},
 		{7, "g", true},
-		{8, nil, false},
+		{8, "", false},
 	}
-
+	//
 	for _, test := range tests {
-		if value, found := tree.Get(test[0]); value != test[1] || found != test[2] {
-			t.Errorf("Got %v,%v expected %v,%v", value, found, test[1], test[2])
+		item, found := tree.Get(Item{key: test[0].(int), value: test[1].(string)})
+		if item.(Item).value != test[1] || found != test[2] {
+			t.Errorf("Got %v,%v expected %v,%v", item.(Item).value, found, test[1], test[2])
 		}
 	}
 }
 
+//
 func TestBTreeGet2(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(7, "g")
-	tree.Put(9, "i")
-	tree.Put(10, "j")
-	tree.Put(6, "f")
-	tree.Put(3, "c")
-	tree.Put(4, "d")
-	tree.Put(5, "e")
-	tree.Put(8, "h")
-	tree.Put(2, "b")
-	tree.Put(1, "a")
+	tree := NewWith(3)
+	tree.Put(Item{key: 7, value: "g"})
+	tree.Put(Item{key: 9, value: "i"})
+	tree.Put(Item{key: 10, value: "j"})
+	tree.Put(Item{key: 6, value: "f"})
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 4, value: "d"})
+	tree.Put(Item{key: 5, value: "e"})
+	tree.Put(Item{key: 8, value: "h"})
+	tree.Put(Item{key: 2, value: "b"})
+	tree.Put(Item{key: 1, value: "a"})
 
 	tests := [][]interface{}{
-		{0, nil, false},
+		{0, "", false},
 		{1, "a", true},
 		{2, "b", true},
 		{3, "c", true},
@@ -63,56 +125,57 @@ func TestBTreeGet2(t *testing.T) {
 		{8, "h", true},
 		{9, "i", true},
 		{10, "j", true},
-		{11, nil, false},
+		{11, "", false},
 	}
 
 	for _, test := range tests {
-		if value, found := tree.Get(test[0]); value != test[1] || found != test[2] {
+		if value, found := tree.Get(Item{key: test[0].(int), value: test[1].(string)}); value.(Item).value != test[1] || found != test[2] {
 			t.Errorf("Got %v,%v expected %v,%v", value, found, test[1], test[2])
 		}
 	}
 }
 
+//
 func TestBTreePut1(t *testing.T) {
 	// https://upload.wikimedia.org/wikipedia/commons/3/33/B_tree_insertion_example.png
-	tree := NewWithIntComparator(3)
+	tree := NewWith(3)
 	assertValidTree(t, tree, 0)
 
-	tree.Put(1, 0)
+	tree.Put(Item2{key: 1, value: 0})
 	assertValidTree(t, tree, 1)
 	assertValidTreeNode(t, tree.Root, 1, 0, []int{1}, false)
 
-	tree.Put(2, 1)
+	tree.Put(Item2{key: 2, value: 1})
 	assertValidTree(t, tree, 2)
 	assertValidTreeNode(t, tree.Root, 2, 0, []int{1, 2}, false)
 
-	tree.Put(3, 2)
+	tree.Put(Item2{key: 3, value: 2})
 	assertValidTree(t, tree, 3)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{2}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{3}, true)
 
-	tree.Put(4, 2)
+	tree.Put(Item2{key: 4, value: 2})
 	assertValidTree(t, tree, 4)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{2}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 2, 0, []int{3, 4}, true)
-
-	tree.Put(5, 2)
+	//
+	tree.Put(Item2{key: 5, value: 2})
 	assertValidTree(t, tree, 5)
 	assertValidTreeNode(t, tree.Root, 2, 3, []int{2, 4}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{3}, true)
 	assertValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{5}, true)
 
-	tree.Put(6, 2)
+	tree.Put(Item2{key: 6, value: 2})
 	assertValidTree(t, tree, 6)
 	assertValidTreeNode(t, tree.Root, 2, 3, []int{2, 4}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{3}, true)
 	assertValidTreeNode(t, tree.Root.Children[2], 2, 0, []int{5, 6}, true)
 
-	tree.Put(7, 2)
+	tree.Put(Item2{key: 7, value: 2})
 	assertValidTree(t, tree, 7)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{4}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{2}, true)
@@ -124,38 +187,38 @@ func TestBTreePut1(t *testing.T) {
 }
 
 func TestBTreePut2(t *testing.T) {
-	tree := NewWithIntComparator(4)
+	tree := NewWith(4)
 	assertValidTree(t, tree, 0)
 
-	tree.Put(0, 0)
+	tree.Put(Item2{key: 0, value: 0})
 	assertValidTree(t, tree, 1)
 	assertValidTreeNode(t, tree.Root, 1, 0, []int{0}, false)
 
-	tree.Put(2, 2)
+	tree.Put(Item2{key: 2, value: 2})
 	assertValidTree(t, tree, 2)
 	assertValidTreeNode(t, tree.Root, 2, 0, []int{0, 2}, false)
 
-	tree.Put(1, 1)
+	tree.Put(Item2{key: 1, value: 1})
 	assertValidTree(t, tree, 3)
 	assertValidTreeNode(t, tree.Root, 3, 0, []int{0, 1, 2}, false)
 
-	tree.Put(1, 1)
+	tree.Put(Item2{key: 1, value: 1})
 	assertValidTree(t, tree, 3)
 	assertValidTreeNode(t, tree.Root, 3, 0, []int{0, 1, 2}, false)
 
-	tree.Put(3, 3)
+	tree.Put(Item2{key: 3, value: 3})
 	assertValidTree(t, tree, 4)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{1}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{0}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 2, 0, []int{2, 3}, true)
 
-	tree.Put(4, 4)
+	tree.Put(Item2{key: 4, value: 4})
 	assertValidTree(t, tree, 5)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{1}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{0}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 3, 0, []int{2, 3, 4}, true)
 
-	tree.Put(5, 5)
+	tree.Put(Item2{key: 5, value: 5})
 	assertValidTree(t, tree, 6)
 	assertValidTreeNode(t, tree.Root, 2, 3, []int{1, 3}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{0}, true)
@@ -163,50 +226,51 @@ func TestBTreePut2(t *testing.T) {
 	assertValidTreeNode(t, tree.Root.Children[2], 2, 0, []int{4, 5}, true)
 }
 
+//
 func TestBTreePut3(t *testing.T) {
 	// http://www.geeksforgeeks.org/b-tree-set-1-insert-2/
-	tree := NewWithIntComparator(6)
+	tree := NewWith(6)
 	assertValidTree(t, tree, 0)
 
-	tree.Put(10, 0)
+	tree.Put(Item2{key: 10, value: 0})
 	assertValidTree(t, tree, 1)
 	assertValidTreeNode(t, tree.Root, 1, 0, []int{10}, false)
 
-	tree.Put(20, 1)
+	tree.Put(Item2{key: 20, value: 1})
 	assertValidTree(t, tree, 2)
 	assertValidTreeNode(t, tree.Root, 2, 0, []int{10, 20}, false)
 
-	tree.Put(30, 2)
+	tree.Put(Item2{key: 30, value: 2})
 	assertValidTree(t, tree, 3)
 	assertValidTreeNode(t, tree.Root, 3, 0, []int{10, 20, 30}, false)
 
-	tree.Put(40, 3)
+	tree.Put(Item2{key: 40, value: 3})
 	assertValidTree(t, tree, 4)
 	assertValidTreeNode(t, tree.Root, 4, 0, []int{10, 20, 30, 40}, false)
 
-	tree.Put(50, 4)
+	tree.Put(Item2{key: 50, value: 4})
 	assertValidTree(t, tree, 5)
 	assertValidTreeNode(t, tree.Root, 5, 0, []int{10, 20, 30, 40, 50}, false)
 
-	tree.Put(60, 5)
+	tree.Put(Item2{key: 60, value: 5})
 	assertValidTree(t, tree, 6)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{30}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{10, 20}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 3, 0, []int{40, 50, 60}, true)
 
-	tree.Put(70, 6)
+	tree.Put(Item2{key: 70, value: 6})
 	assertValidTree(t, tree, 7)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{30}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{10, 20}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 4, 0, []int{40, 50, 60, 70}, true)
 
-	tree.Put(80, 7)
+	tree.Put(Item2{key: 80, value: 7})
 	assertValidTree(t, tree, 8)
 	assertValidTreeNode(t, tree.Root, 1, 2, []int{30}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{10, 20}, true)
 	assertValidTreeNode(t, tree.Root.Children[1], 5, 0, []int{40, 50, 60, 70, 80}, true)
 
-	tree.Put(90, 8)
+	tree.Put(Item2{key: 90, value: 8})
 	assertValidTree(t, tree, 9)
 	assertValidTreeNode(t, tree.Root, 2, 3, []int{30, 60}, false)
 	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{10, 20}, true)
@@ -214,307 +278,311 @@ func TestBTreePut3(t *testing.T) {
 	assertValidTreeNode(t, tree.Root.Children[2], 3, 0, []int{70, 80, 90}, true)
 }
 
+//
 func TestBTreePut4(t *testing.T) {
-	tree := NewWithIntComparator(3)
+	tree := NewWith(3)
 	assertValidTree(t, tree, 0)
 
-	tree.Put(6, nil)
+	tree.Put(Item3{key: 6, value: nil})
 	assertValidTree(t, tree, 1)
-	assertValidTreeNode(t, tree.Root, 1, 0, []int{6}, false)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 0, []int{6}, false)
 
-	tree.Put(5, nil)
+	tree.Put(Item3{key: 5, value: nil})
 	assertValidTree(t, tree, 2)
-	assertValidTreeNode(t, tree.Root, 2, 0, []int{5, 6}, false)
-
-	tree.Put(4, nil)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 0, []int{5, 6}, false)
+	//
+	tree.Put(Item3{key: 4, value: nil})
 	assertValidTree(t, tree, 3)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{5}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{6}, true)
-
-	tree.Put(3, nil)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{5}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{6}, true)
+	//
+	tree.Put(Item3{key: 3, value: nil})
 	assertValidTree(t, tree, 4)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{5}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{3, 4}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{6}, true)
-
-	tree.Put(2, nil)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{5}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{3, 4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{6}, true)
+	//
+	tree.Put(Item3{key: 2, value: nil})
 	assertValidTree(t, tree, 5)
-	assertValidTreeNode(t, tree.Root, 2, 3, []int{3, 5}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 3, []int{3, 5}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{6}, true)
 
-	tree.Put(1, nil)
+	tree.Put(Item3{key: 1, value: nil})
 	assertValidTree(t, tree, 6)
-	assertValidTreeNode(t, tree.Root, 2, 3, []int{3, 5}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{1, 2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 3, []int{3, 5}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{1, 2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{6}, true)
 
-	tree.Put(0, nil)
+	tree.Put(Item3{key: 0, value: nil})
 	assertValidTree(t, tree, 7)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{0}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{0}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
 
-	tree.Put(-1, nil)
+	tree.Put(Item3{key: -1, value: nil})
 	assertValidTree(t, tree, 8)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 2, 0, []int{-1, 0}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 2, 0, []int{-1, 0}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
 
-	tree.Put(-2, nil)
+	tree.Put(Item3{key: -2, value: nil})
 	assertValidTree(t, tree, 9)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 2, 3, []int{-1, 1}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{-2}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{0}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[2], 1, 0, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 2, 3, []int{-1, 1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{-2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{0}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[2], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
 
-	tree.Put(-3, nil)
+	tree.Put(Item3{key: -3, value: nil})
 	assertValidTree(t, tree, 10)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 2, 3, []int{-1, 1}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 2, 0, []int{-3, -2}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{0}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[2], 1, 0, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 2, 3, []int{-1, 1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 2, 0, []int{-3, -2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{0}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[2], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{6}, true)
 
-	tree.Put(-4, nil)
+	tree.Put(Item3{key: -4, value: nil})
 	assertValidTree(t, tree, 11)
-	assertValidTreeNode(t, tree.Root, 2, 3, []int{-1, 3}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{-3}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[2], 1, 2, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{-4}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{-2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{0}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[2].Children[0], 1, 0, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[2].Children[1], 1, 0, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 3, []int{-1, 3}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{-3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2], 1, 2, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{-4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{-2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{0}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2].Children[0], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2].Children[1], 1, 0, []int{6}, true)
 }
 
+//
 func TestBTreeRemove1(t *testing.T) {
 	// empty
-	tree := NewWithIntComparator(3)
-	tree.Remove(1)
+	tree := NewWith(3)
+	tree.Remove(Item{key: 1})
 	assertValidTree(t, tree, 0)
 }
 
 func TestBTreeRemove2(t *testing.T) {
 	// leaf node (no underflow)
-	tree := NewWithIntComparator(3)
-	tree.Put(1, nil)
-	tree.Put(2, nil)
+	tree := NewWith(3)
+	tree.Put(Item3{key: 1, value: nil})
+	tree.Put(Item3{key: 2, value: nil})
 
-	tree.Remove(1)
+	tree.Remove(Item3{key: 1})
 	assertValidTree(t, tree, 1)
-	assertValidTreeNode(t, tree.Root, 1, 0, []int{2}, false)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 0, []int{2}, false)
 
-	tree.Remove(2)
+	tree.Remove(Item3{key: 2})
 	assertValidTree(t, tree, 0)
 }
 
 func TestBTreeRemove3(t *testing.T) {
 	// merge with right (underflow)
 	{
-		tree := NewWithIntComparator(3)
-		tree.Put(1, nil)
-		tree.Put(2, nil)
-		tree.Put(3, nil)
+		tree := NewWith(3)
+		tree.Put(Item3{key: 1, value: nil})
+		tree.Put(Item3{key: 2, value: nil})
+		tree.Put(Item3{key: 3, value: nil})
 
-		tree.Remove(1)
+		tree.Remove(Item3{key: 1})
 		assertValidTree(t, tree, 2)
-		assertValidTreeNode(t, tree.Root, 2, 0, []int{2, 3}, false)
+		assertItem3ValidTreeNode(t, tree.Root, 2, 0, []int{2, 3}, false)
 	}
 	// merge with left (underflow)
 	{
-		tree := NewWithIntComparator(3)
-		tree.Put(1, nil)
-		tree.Put(2, nil)
-		tree.Put(3, nil)
+		tree := NewWith(3)
+		tree.Put(Item3{key: 1, value: nil})
+		tree.Put(Item3{key: 2, value: nil})
+		tree.Put(Item3{key: 3, value: nil})
 
-		tree.Remove(3)
+		tree.Remove(Item3{key: 3})
 		assertValidTree(t, tree, 2)
-		assertValidTreeNode(t, tree.Root, 2, 0, []int{1, 2}, false)
+		assertItem3ValidTreeNode(t, tree.Root, 2, 0, []int{1, 2}, false)
 	}
 }
 
 func TestBTreeRemove4(t *testing.T) {
 	// rotate left (underflow)
-	tree := NewWithIntComparator(3)
-	tree.Put(1, nil)
-	tree.Put(2, nil)
-	tree.Put(3, nil)
-	tree.Put(4, nil)
+	tree := NewWith(3)
+	tree.Put(Item3{key: 1, value: nil})
+	tree.Put(Item3{key: 2, value: nil})
+	tree.Put(Item3{key: 3, value: nil})
+	tree.Put(Item3{key: 4, value: nil})
 
 	assertValidTree(t, tree, 4)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{2}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 2, 0, []int{3, 4}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{2}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 2, 0, []int{3, 4}, true)
 
-	tree.Remove(1)
+	tree.Remove(Item3{key: 1})
 	assertValidTree(t, tree, 3)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{3}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{4}, true)
 }
 
 func TestBTreeRemove5(t *testing.T) {
 	// rotate right (underflow)
-	tree := NewWithIntComparator(3)
-	tree.Put(1, nil)
-	tree.Put(2, nil)
-	tree.Put(3, nil)
-	tree.Put(0, nil)
+	tree := NewWith(3)
+	tree.Put(Item3{key: 1, value: nil})
+	tree.Put(Item3{key: 2, value: nil})
+	tree.Put(Item3{key: 3, value: nil})
+	tree.Put(Item3{key: 0, value: nil})
 
 	assertValidTree(t, tree, 4)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{2}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{0, 1}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{3}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{2}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{0, 1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{3}, true)
 
-	tree.Remove(3)
+	tree.Remove(Item3{key: 3})
 	assertValidTree(t, tree, 3)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{1}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{0}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{1}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{0}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{2}, true)
 }
 
 func TestBTreeRemove6(t *testing.T) {
 	// root height reduction after a series of underflows on right side
 	// use simulator: https://www.cs.usfca.edu/~galles/visualization/BTree.html
-	tree := NewWithIntComparator(3)
-	tree.Put(1, nil)
-	tree.Put(2, nil)
-	tree.Put(3, nil)
-	tree.Put(4, nil)
-	tree.Put(5, nil)
-	tree.Put(6, nil)
-	tree.Put(7, nil)
+	tree := NewWith(3)
+	tree.Put(Item3{key: 1, value: nil})
+	tree.Put(Item3{key: 2, value: nil})
+	tree.Put(Item3{key: 3, value: nil})
+	tree.Put(Item3{key: 4, value: nil})
+	tree.Put(Item3{key: 5, value: nil})
+	tree.Put(Item3{key: 6, value: nil})
+	tree.Put(Item3{key: 7, value: nil})
 
 	assertValidTree(t, tree, 7)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{4}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{6}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{3}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{4}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{7}, true)
 
-	tree.Remove(7)
+	tree.Remove(Item3{key: 7})
 	assertValidTree(t, tree, 6)
-	assertValidTreeNode(t, tree.Root, 2, 3, []int{2, 4}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{3}, true)
-	assertValidTreeNode(t, tree.Root.Children[2], 2, 0, []int{5, 6}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 3, []int{2, 4}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2], 2, 0, []int{5, 6}, true)
 }
 
+//
 func TestBTreeRemove7(t *testing.T) {
 	// root height reduction after a series of underflows on left side
 	// use simulator: https://www.cs.usfca.edu/~galles/visualization/BTree.html
-	tree := NewWithIntComparator(3)
-	tree.Put(1, nil)
-	tree.Put(2, nil)
-	tree.Put(3, nil)
-	tree.Put(4, nil)
-	tree.Put(5, nil)
-	tree.Put(6, nil)
-	tree.Put(7, nil)
+	tree := NewWith(3)
+	tree.Put(Item3{key: 1, value: nil})
+	tree.Put(Item3{key: 2, value: nil})
+	tree.Put(Item3{key: 3, value: nil})
+	tree.Put(Item3{key: 4, value: nil})
+	tree.Put(Item3{key: 5, value: nil})
+	tree.Put(Item3{key: 6, value: nil})
+	tree.Put(Item3{key: 7, value: nil})
 
 	assertValidTree(t, tree, 7)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{4}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{6}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{3}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{4}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{6}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{7}, true)
 
-	tree.Remove(1) // series of underflows
+	tree.Remove(Item3{key: 1}) // series of underflows
 	assertValidTree(t, tree, 6)
-	assertValidTreeNode(t, tree.Root, 2, 3, []int{4, 6}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{2, 3}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 3, []int{4, 6}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{2, 3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{7}, true)
 
 	// clear all remaining
-	tree.Remove(2)
+	tree.Remove(Item3{key: 2})
 	assertValidTree(t, tree, 5)
-	assertValidTreeNode(t, tree.Root, 2, 3, []int{4, 6}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{3}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 3, []int{4, 6}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[2], 1, 0, []int{7}, true)
 
-	tree.Remove(3)
+	tree.Remove(Item3{key: 3})
 	assertValidTree(t, tree, 4)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{6}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{4, 5}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{6}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 2, 0, []int{4, 5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{7}, true)
 
-	tree.Remove(4)
+	tree.Remove(Item3{key: 4})
 	assertValidTree(t, tree, 3)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{6}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{6}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 0, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 0, []int{7}, true)
 
-	tree.Remove(5)
+	tree.Remove(Item3{key: 5})
 	assertValidTree(t, tree, 2)
-	assertValidTreeNode(t, tree.Root, 2, 0, []int{6, 7}, false)
+	assertItem3ValidTreeNode(t, tree.Root, 2, 0, []int{6, 7}, false)
 
-	tree.Remove(6)
+	tree.Remove(Item3{key: 6})
 	assertValidTree(t, tree, 1)
-	assertValidTreeNode(t, tree.Root, 1, 0, []int{7}, false)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 0, []int{7}, false)
 
-	tree.Remove(7)
+	tree.Remove(Item3{key: 7})
 	assertValidTree(t, tree, 0)
 }
 
+//
 func TestBTreeRemove8(t *testing.T) {
 	// use simulator: https://www.cs.usfca.edu/~galles/visualization/BTree.html
-	tree := NewWithIntComparator(3)
-	tree.Put(1, nil)
-	tree.Put(2, nil)
-	tree.Put(3, nil)
-	tree.Put(4, nil)
-	tree.Put(5, nil)
-	tree.Put(6, nil)
-	tree.Put(7, nil)
-	tree.Put(8, nil)
-	tree.Put(9, nil)
+	tree := NewWith(3)
+	tree.Put(Item3{key: 1, value: nil})
+	tree.Put(Item3{key: 2, value: nil})
+	tree.Put(Item3{key: 3, value: nil})
+	tree.Put(Item3{key: 4, value: nil})
+	tree.Put(Item3{key: 5, value: nil})
+	tree.Put(Item3{key: 6, value: nil})
+	tree.Put(Item3{key: 7, value: nil})
+	tree.Put(Item3{key: 8, value: nil})
+	tree.Put(Item3{key: 9, value: nil})
 
 	assertValidTree(t, tree, 9)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{4}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{2}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 2, 3, []int{6, 8}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{1}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{3}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{7}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[2], 1, 0, []int{9}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{4}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{2}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 2, 3, []int{6, 8}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 1, 0, []int{1}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[2], 1, 0, []int{9}, true)
 
-	tree.Remove(1)
+	tree.Remove(Item3{key: 1})
 	assertValidTree(t, tree, 8)
-	assertValidTreeNode(t, tree.Root, 1, 2, []int{6}, false)
-	assertValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{4}, true)
-	assertValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{8}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[0], 2, 0, []int{2, 3}, true)
-	assertValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{5}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{7}, true)
-	assertValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{9}, true)
+	assertItem3ValidTreeNode(t, tree.Root, 1, 2, []int{6}, false)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0], 1, 2, []int{4}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1], 1, 2, []int{8}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[0], 2, 0, []int{2, 3}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[0].Children[1], 1, 0, []int{5}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[0], 1, 0, []int{7}, true)
+	assertItem3ValidTreeNode(t, tree.Root.Children[1].Children[1], 1, 0, []int{9}, true)
 }
 
 func TestBTreeRemove9(t *testing.T) {
@@ -522,40 +590,40 @@ func TestBTreeRemove9(t *testing.T) {
 	orders := []int{3, 4, 5, 6, 7, 8, 9, 10, 20, 100, 500, 1000, 5000, 10000}
 	for _, order := range orders {
 
-		tree := NewWithIntComparator(order)
+		tree := NewWith(order)
 
 		{
 			for i := 1; i <= max; i++ {
-				tree.Put(i, i)
+				tree.Put(Item2{key: i, value: i})
 			}
 			assertValidTree(t, tree, max)
 
 			for i := 1; i <= max; i++ {
-				if _, found := tree.Get(i); !found {
+				if _, found := tree.Get(Item2{key: i}); !found {
 					t.Errorf("Not found %v", i)
 				}
 			}
 
 			for i := 1; i <= max; i++ {
-				tree.Remove(i)
+				tree.Remove(Item2{key: i})
 			}
 			assertValidTree(t, tree, 0)
 		}
 
 		{
 			for i := max; i > 0; i-- {
-				tree.Put(i, i)
+				tree.Put(Item2{key: i, value: i})
 			}
 			assertValidTree(t, tree, max)
 
 			for i := max; i > 0; i-- {
-				if _, found := tree.Get(i); !found {
+				if _, found := tree.Get(Item2{key: i}); !found {
 					t.Errorf("Not found %v", i)
 				}
 			}
 
 			for i := max; i > 0; i-- {
-				tree.Remove(i)
+				tree.Remove(Item2{key: i})
 			}
 			assertValidTree(t, tree, 0)
 		}
@@ -563,60 +631,60 @@ func TestBTreeRemove9(t *testing.T) {
 }
 
 func TestBTreeHeight(t *testing.T) {
-	tree := NewWithIntComparator(3)
+	tree := NewWith(3)
 	if actualValue, expectedValue := tree.Height(), 0; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Put(1, 0)
+	tree.Put(Item2{key: 1, value: 0})
 	if actualValue, expectedValue := tree.Height(), 1; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Put(2, 1)
+	tree.Put(Item2{key: 2, value: 1})
 	if actualValue, expectedValue := tree.Height(), 1; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Put(3, 2)
+	tree.Put(Item2{key: 3, value: 2})
 	if actualValue, expectedValue := tree.Height(), 2; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Put(4, 2)
+	tree.Put(Item2{key: 4, value: 2})
 	if actualValue, expectedValue := tree.Height(), 2; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Put(5, 2)
+	tree.Put(Item2{key: 5, value: 2})
 	if actualValue, expectedValue := tree.Height(), 2; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Put(6, 2)
+	tree.Put(Item2{key: 6, value: 2})
 	if actualValue, expectedValue := tree.Height(), 2; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Put(7, 2)
+	tree.Put(Item2{key: 7, value: 2})
 	if actualValue, expectedValue := tree.Height(), 3; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	tree.Remove(1)
-	tree.Remove(2)
-	tree.Remove(3)
-	tree.Remove(4)
-	tree.Remove(5)
-	tree.Remove(6)
-	tree.Remove(7)
+	tree.Remove(Item2{key: 1})
+	tree.Remove(Item2{key: 2})
+	tree.Remove(Item2{key: 3})
+	tree.Remove(Item2{key: 4})
+	tree.Remove(Item2{key: 5})
+	tree.Remove(Item2{key: 6})
+	tree.Remove(Item2{key: 7})
 	if actualValue, expectedValue := tree.Height(), 0; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 }
 
 func TestBTreeLeftAndRight(t *testing.T) {
-	tree := NewWithIntComparator(3)
+	tree := NewWith(3)
 
 	if actualValue := tree.Left(); actualValue != nil {
 		t.Errorf("Got %v expected %v", actualValue, nil)
@@ -625,44 +693,53 @@ func TestBTreeLeftAndRight(t *testing.T) {
 		t.Errorf("Got %v expected %v", actualValue, nil)
 	}
 
-	tree.Put(1, "a")
-	tree.Put(5, "e")
-	tree.Put(6, "f")
-	tree.Put(7, "g")
-	tree.Put(3, "c")
-	tree.Put(4, "d")
-	tree.Put(1, "x") // overwrite
-	tree.Put(2, "b")
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 5, value: "e"})
+	tree.Put(Item{key: 6, value: "f"})
+	tree.Put(Item{key: 7, value: "g"})
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 4, value: "d"})
+	tree.Put(Item{key: 1, value: "x"}) // overwrite
+	tree.Put(Item{key: 2, value: "b"})
 
-	if actualValue, expectedValue := tree.LeftKey(), 1; actualValue != expectedValue {
+	if actualValue, expectedValue := tree.LeftItem(), 1; actualValue.(Item).key != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
-	if actualValue, expectedValue := tree.LeftValue(), "x"; actualValue != expectedValue {
+	if actualValue, expectedValue := tree.LeftItem(), "x"; actualValue.(Item).value != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 
-	if actualValue, expectedValue := tree.RightKey(), 7; actualValue != expectedValue {
+	if actualValue, expectedValue := tree.RightItem(), 7; actualValue.(Item).key != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
-	if actualValue, expectedValue := tree.RightValue(), "g"; actualValue != expectedValue {
+	if actualValue, expectedValue := tree.RightItem(), "g"; actualValue.(Item).value != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 }
 
 func TestBTreeIteratorValuesAndKeys(t *testing.T) {
-	tree := NewWithIntComparator(4)
-	tree.Put(4, "d")
-	tree.Put(5, "e")
-	tree.Put(6, "f")
-	tree.Put(3, "c")
-	tree.Put(1, "a")
-	tree.Put(7, "g")
-	tree.Put(2, "b")
-	tree.Put(1, "x") // override
-	if actualValue, expectedValue := fmt.Sprintf("%d%d%d%d%d%d%d", tree.Keys()...), "1234567"; actualValue != expectedValue {
+	tree := NewWith(4)
+	tree.Put(Item{key: 4, value: "d"})
+	tree.Put(Item{key: 5, value: "e"})
+	tree.Put(Item{key: 6, value: "f"})
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 7, value: "g"})
+	tree.Put(Item{key: 2, value: "b"})
+	tree.Put(Item{key: 1, value: "x"}) // override
+
+	contents := tree.Contents()
+	var keys []interface{}
+	var values []interface{}
+	for _, content := range contents {
+		keys = append(keys, content.(Item).key)
+		values = append(values, content.(Item).value)
+	}
+
+	if actualValue, expectedValue := fmt.Sprintf("%d%d%d%d%d%d%d", keys...), "1234567"; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
-	if actualValue, expectedValue := fmt.Sprintf("%s%s%s%s%s%s%s", tree.Values()...), "xbcdefg"; actualValue != expectedValue {
+	if actualValue, expectedValue := fmt.Sprintf("%s%s%s%s%s%s%s", values...), "xbcdefg"; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
 	if actualValue := tree.Size(); actualValue != 7 {
@@ -671,15 +748,16 @@ func TestBTreeIteratorValuesAndKeys(t *testing.T) {
 }
 
 func TestBTreeIteratorNextOnEmpty(t *testing.T) {
-	tree := NewWithIntComparator(3)
+	tree := NewWith(3)
 	it := tree.Iterator()
 	for it.Next() {
 		t.Errorf("Shouldn't iterate on empty tree")
 	}
 }
 
+//
 func TestBTreeIteratorPrevOnEmpty(t *testing.T) {
-	tree := NewWithIntComparator(3)
+	tree := NewWith(3)
 	it := tree.Iterator()
 	for it.Prev() {
 		t.Errorf("Shouldn't iterate on empty tree")
@@ -687,20 +765,20 @@ func TestBTreeIteratorPrevOnEmpty(t *testing.T) {
 }
 
 func TestBTreeIterator1Next(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(5, "e")
-	tree.Put(6, "f")
-	tree.Put(7, "g")
-	tree.Put(3, "c")
-	tree.Put(4, "d")
-	tree.Put(1, "x")
-	tree.Put(2, "b")
-	tree.Put(1, "a") //overwrite
+	tree := NewWith(3)
+	tree.Put(Item{key: 5, value: "e"})
+	tree.Put(Item{key: 6, value: "f"})
+	tree.Put(Item{key: 7, value: "g"})
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 4, value: "d"})
+	tree.Put(Item{key: 1, value: "x"})
+	tree.Put(Item{key: 2, value: "b"})
+	tree.Put(Item{key: 1, value: "a"}) //overwrite
 	it := tree.Iterator()
 	count := 0
 	for it.Next() {
 		count++
-		key := it.Key()
+		key := it.Item().(Item).key
 		switch key {
 		case count:
 			if actualValue, expectedValue := key, count; actualValue != expectedValue {
@@ -717,22 +795,23 @@ func TestBTreeIterator1Next(t *testing.T) {
 	}
 }
 
+//
 func TestBTreeIterator1Prev(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(5, "e")
-	tree.Put(6, "f")
-	tree.Put(7, "g")
-	tree.Put(3, "c")
-	tree.Put(4, "d")
-	tree.Put(1, "x")
-	tree.Put(2, "b")
-	tree.Put(1, "a") //overwrite
+	tree := NewWith(3)
+	tree.Put(Item{key: 5, value: "e"})
+	tree.Put(Item{key: 6, value: "f"})
+	tree.Put(Item{key: 7, value: "g"})
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 4, value: "d"})
+	tree.Put(Item{key: 1, value: "x"})
+	tree.Put(Item{key: 2, value: "b"})
+	tree.Put(Item{key: 1, value: "a"}) //overwrite
 	it := tree.Iterator()
 	for it.Next() {
 	}
 	countDown := tree.size
 	for it.Prev() {
-		key := it.Key()
+		key := it.Item().(Item).key
 		switch key {
 		case countDown:
 			if actualValue, expectedValue := key, countDown; actualValue != expectedValue {
@@ -751,15 +830,15 @@ func TestBTreeIterator1Prev(t *testing.T) {
 }
 
 func TestBTreeIterator2Next(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(3, "c")
-	tree.Put(1, "a")
-	tree.Put(2, "b")
+	tree := NewWith(3)
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 2, value: "b"})
 	it := tree.Iterator()
 	count := 0
 	for it.Next() {
 		count++
-		key := it.Key()
+		key := it.Item().(Item).key
 		switch key {
 		case count:
 			if actualValue, expectedValue := key, count; actualValue != expectedValue {
@@ -776,17 +855,18 @@ func TestBTreeIterator2Next(t *testing.T) {
 	}
 }
 
+//
 func TestBTreeIterator2Prev(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(3, "c")
-	tree.Put(1, "a")
-	tree.Put(2, "b")
+	tree := NewWith(3)
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 2, value: "b"})
 	it := tree.Iterator()
 	for it.Next() {
 	}
 	countDown := tree.size
 	for it.Prev() {
-		key := it.Key()
+		key := it.Item().(Item).key
 		switch key {
 		case countDown:
 			if actualValue, expectedValue := key, countDown; actualValue != expectedValue {
@@ -805,13 +885,13 @@ func TestBTreeIterator2Prev(t *testing.T) {
 }
 
 func TestBTreeIterator3Next(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(1, "a")
+	tree := NewWith(3)
+	tree.Put(Item{key: 1, value: "a"})
 	it := tree.Iterator()
 	count := 0
 	for it.Next() {
 		count++
-		key := it.Key()
+		key := it.Item().(Item).key
 		switch key {
 		case count:
 			if actualValue, expectedValue := key, count; actualValue != expectedValue {
@@ -829,14 +909,14 @@ func TestBTreeIterator3Next(t *testing.T) {
 }
 
 func TestBTreeIterator3Prev(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(1, "a")
+	tree := NewWith(3)
+	tree.Put(Item{key: 1, value: "a"})
 	it := tree.Iterator()
 	for it.Next() {
 	}
 	countDown := tree.size
 	for it.Prev() {
-		key := it.Key()
+		key := it.Item().(Item).key
 		switch key {
 		case countDown:
 			if actualValue, expectedValue := key, countDown; actualValue != expectedValue {
@@ -855,22 +935,22 @@ func TestBTreeIterator3Prev(t *testing.T) {
 }
 
 func TestBTreeIterator4Next(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(13, 5)
-	tree.Put(8, 3)
-	tree.Put(17, 7)
-	tree.Put(1, 1)
-	tree.Put(11, 4)
-	tree.Put(15, 6)
-	tree.Put(25, 9)
-	tree.Put(6, 2)
-	tree.Put(22, 8)
-	tree.Put(27, 10)
+	tree := NewWith(3)
+	tree.Put(Item2{key: 13, value: 5})
+	tree.Put(Item2{key: 8, value: 3})
+	tree.Put(Item2{key: 17, value: 7})
+	tree.Put(Item2{key: 1, value: 1})
+	tree.Put(Item2{key: 11, value: 4})
+	tree.Put(Item2{key: 15, value: 6})
+	tree.Put(Item2{key: 25, value: 9})
+	tree.Put(Item2{key: 6, value: 2})
+	tree.Put(Item2{key: 22, value: 8})
+	tree.Put(Item2{key: 27, value: 10})
 	it := tree.Iterator()
 	count := 0
 	for it.Next() {
 		count++
-		value := it.Value()
+		value := it.Item().(Item2).value
 		switch value {
 		case count:
 			if actualValue, expectedValue := value, count; actualValue != expectedValue {
@@ -888,23 +968,23 @@ func TestBTreeIterator4Next(t *testing.T) {
 }
 
 func TestBTreeIterator4Prev(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(13, 5)
-	tree.Put(8, 3)
-	tree.Put(17, 7)
-	tree.Put(1, 1)
-	tree.Put(11, 4)
-	tree.Put(15, 6)
-	tree.Put(25, 9)
-	tree.Put(6, 2)
-	tree.Put(22, 8)
-	tree.Put(27, 10)
+	tree := NewWith(3)
+	tree.Put(Item2{key: 13, value: 5})
+	tree.Put(Item2{key: 8, value: 3})
+	tree.Put(Item2{key: 17, value: 7})
+	tree.Put(Item2{key: 1, value: 1})
+	tree.Put(Item2{key: 11, value: 4})
+	tree.Put(Item2{key: 15, value: 6})
+	tree.Put(Item2{key: 25, value: 9})
+	tree.Put(Item2{key: 6, value: 2})
+	tree.Put(Item2{key: 22, value: 8})
+	tree.Put(Item2{key: 27, value: 10})
 	it := tree.Iterator()
 	count := tree.Size()
 	for it.Next() {
 	}
 	for it.Prev() {
-		value := it.Value()
+		value := it.Item().(Item2).value
 		switch value {
 		case count:
 			if actualValue, expectedValue := value, count; actualValue != expectedValue {
@@ -923,10 +1003,10 @@ func TestBTreeIterator4Prev(t *testing.T) {
 }
 
 func TestBTreeIteratorBegin(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(3, "c")
-	tree.Put(1, "a")
-	tree.Put(2, "b")
+	tree := NewWith(3)
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 2, value: "b"})
 	it := tree.Iterator()
 
 	if it.node != nil {
@@ -949,13 +1029,13 @@ func TestBTreeIteratorBegin(t *testing.T) {
 	}
 
 	it.Next()
-	if key, value := it.Key(), it.Value(); key != 1 || value != "a" {
+	if key, value := it.Item().(Item).key, it.Item().(Item).value; key != 1 || value != "a" {
 		t.Errorf("Got %v,%v expected %v,%v", key, value, 1, "a")
 	}
 }
 
 func TestBTreeIteratorEnd(t *testing.T) {
-	tree := NewWithIntComparator(3)
+	tree := NewWith(3)
 	it := tree.Iterator()
 
 	if it.node != nil {
@@ -967,57 +1047,59 @@ func TestBTreeIteratorEnd(t *testing.T) {
 		t.Errorf("Got %v expected %v", it.node, nil)
 	}
 
-	tree.Put(3, "c")
-	tree.Put(1, "a")
-	tree.Put(2, "b")
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 2, value: "b"})
 	it.End()
 	if it.node != nil {
 		t.Errorf("Got %v expected %v", it.node, nil)
 	}
 
 	it.Prev()
-	if key, value := it.Key(), it.Value(); key != 3 || value != "c" {
+	if key, value := it.Item().(Item).key, it.Item().(Item).value; key != 3 || value != "c" {
 		t.Errorf("Got %v,%v expected %v,%v", key, value, 3, "c")
 	}
 }
 
+//
 func TestBTreeIteratorFirst(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(3, "c")
-	tree.Put(1, "a")
-	tree.Put(2, "b")
+	tree := NewWith(3)
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 2, value: "b"})
 	it := tree.Iterator()
 	if actualValue, expectedValue := it.First(), true; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
-	if key, value := it.Key(), it.Value(); key != 1 || value != "a" {
+	if key, value := it.Item().(Item).key, it.Item().(Item).value; key != 1 || value != "a" {
 		t.Errorf("Got %v,%v expected %v,%v", key, value, 1, "a")
 	}
 }
 
 func TestBTreeIteratorLast(t *testing.T) {
-	tree := NewWithIntComparator(3)
-	tree.Put(3, "c")
-	tree.Put(1, "a")
-	tree.Put(2, "b")
+	tree := NewWith(3)
+	tree.Put(Item{key: 3, value: "c"})
+	tree.Put(Item{key: 1, value: "a"})
+	tree.Put(Item{key: 2, value: "b"})
 	it := tree.Iterator()
 	if actualValue, expectedValue := it.Last(), true; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v", actualValue, expectedValue)
 	}
-	if key, value := it.Key(), it.Value(); key != 3 || value != "c" {
+	if key, value := it.Item().(Item).key, it.Item().(Item).value; key != 3 || value != "c" {
 		t.Errorf("Got %v,%v expected %v,%v", key, value, 3, "c")
 	}
 }
 
+//
 func TestBTree_search(t *testing.T) {
 	{
-		tree := NewWithIntComparator(3)
-		tree.Root = &Node{Entries: []*Entry{}, Children: make([]*Node, 0)}
+		tree := NewWith(3)
+		tree.Root = &Node{Contents: []*Content{}, Children: make([]*Node, 0)}
 		tests := [][]interface{}{
 			{0, 0, false},
 		}
 		for _, test := range tests {
-			index, found := tree.search(tree.Root, test[0])
+			index, found := tree.search(tree.Root, Item3{key: test[0].(int)})
 			if actualValue, expectedValue := index, test[1]; actualValue != expectedValue {
 				t.Errorf("Got %v expected %v", actualValue, expectedValue)
 			}
@@ -1027,8 +1109,13 @@ func TestBTree_search(t *testing.T) {
 		}
 	}
 	{
-		tree := NewWithIntComparator(3)
-		tree.Root = &Node{Entries: []*Entry{{2, 0}, {4, 1}, {6, 2}}, Children: []*Node{}}
+		tree := NewWith(3)
+		var node Node
+		node.Put(Item2{key: 2, value: 0})
+		node.Put(Item2{key: 4, value: 1})
+		node.Put(Item2{key: 6, value: 2})
+		node.Children = []*Node{}
+		tree.Root = &node
 		tests := [][]interface{}{
 			{0, 0, false},
 			{1, 0, false},
@@ -1040,8 +1127,8 @@ func TestBTree_search(t *testing.T) {
 			{7, 3, false},
 		}
 		for _, test := range tests {
-			index, found := tree.search(tree.Root, test[0])
-			if actualValue, expectedValue := index, test[1]; actualValue != expectedValue {
+			index, found := tree.search(tree.Root, Item2{key: test[0].(int)})
+			if actualValue, expectedValue := index, test[1].(int); actualValue != expectedValue {
 				t.Errorf("Got %v expected %v", actualValue, expectedValue)
 			}
 			if actualValue, expectedValue := found, test[2]; actualValue != expectedValue {
@@ -1057,58 +1144,45 @@ func assertValidTree(t *testing.T, tree *Tree, expectedSize int) {
 	}
 }
 
-func assertValidTreeNode(t *testing.T, node *Node, expectedEntries int, expectedChildren int, keys []int, hasParent bool) {
+//
+func assertValidTreeNode(t *testing.T, node *Node, expectedContents int, expectedChildren int, keys []int, hasParent bool) {
 	if actualValue, expectedValue := node.Parent != nil, hasParent; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v for hasParent", actualValue, expectedValue)
 	}
-	if actualValue, expectedValue := len(node.Entries), expectedEntries; actualValue != expectedValue {
-		t.Errorf("Got %v expected %v for entries size", actualValue, expectedValue)
+	if actualValue, expectedValue := len(node.Contents), expectedContents; actualValue != expectedValue {
+		t.Errorf("Got %v expected %v for contents size", actualValue, expectedValue)
 	}
 	if actualValue, expectedValue := len(node.Children), expectedChildren; actualValue != expectedValue {
 		t.Errorf("Got %v expected %v for children size", actualValue, expectedValue)
 	}
 	for i, key := range keys {
-		if actualValue, expectedValue := node.Entries[i].Key, key; actualValue != expectedValue {
+		if actualValue, expectedValue := (*node.Contents[i]).(Item2).key, key; actualValue != expectedValue {
 			t.Errorf("Got %v expected %v for key", actualValue, expectedValue)
 		}
 	}
 }
 
-func TestBTreeSerialization(t *testing.T) {
-	tree := NewWithStringComparator(3)
-	tree.Put("c", "3")
-	tree.Put("b", "2")
-	tree.Put("a", "1")
-
-	var err error
-	assert := func() {
-		if actualValue, expectedValue := tree.Size(), 3; actualValue != expectedValue {
-			t.Errorf("Got %v expected %v", actualValue, expectedValue)
-		}
-		if actualValue := tree.Keys(); actualValue[0].(string) != "a" || actualValue[1].(string) != "b" || actualValue[2].(string) != "c" {
-			t.Errorf("Got %v expected %v", actualValue, "[a,b,c]")
-		}
-		if actualValue := tree.Values(); actualValue[0].(string) != "1" || actualValue[1].(string) != "2" || actualValue[2].(string) != "3" {
-			t.Errorf("Got %v expected %v", actualValue, "[1,2,3]")
-		}
-		if err != nil {
-			t.Errorf("Got error %v", err)
+func assertItem3ValidTreeNode(t *testing.T, node *Node, expectedContents int, expectedChildren int, keys []int, hasParent bool) {
+	if actualValue, expectedValue := node.Parent != nil, hasParent; actualValue != expectedValue {
+		t.Errorf("Got %v expected %v for hasParent", actualValue, expectedValue)
+	}
+	if actualValue, expectedValue := len(node.Contents), expectedContents; actualValue != expectedValue {
+		t.Errorf("Got %v expected %v for contents size", actualValue, expectedValue)
+	}
+	if actualValue, expectedValue := len(node.Children), expectedChildren; actualValue != expectedValue {
+		t.Errorf("Got %v expected %v for children size", actualValue, expectedValue)
+	}
+	for i, key := range keys {
+		if actualValue, expectedValue := (*node.Contents[i]).(Item3).key, key; actualValue != expectedValue {
+			t.Errorf("Got %v expected %v for key", actualValue, expectedValue)
 		}
 	}
-
-	assert()
-
-	json, err := tree.ToJSON()
-	assert()
-
-	err = tree.FromJSON(json)
-	assert()
 }
 
 func benchmarkGet(b *testing.B, tree *Tree, size int) {
 	for i := 0; i < b.N; i++ {
 		for n := 0; n < size; n++ {
-			tree.Get(n)
+			tree.Get(Item3{key: n})
 		}
 	}
 }
@@ -1116,15 +1190,16 @@ func benchmarkGet(b *testing.B, tree *Tree, size int) {
 func benchmarkPut(b *testing.B, tree *Tree, size int) {
 	for i := 0; i < b.N; i++ {
 		for n := 0; n < size; n++ {
-			tree.Put(n, struct{}{})
+			tree.Put(Item3{key: n, value: struct{}{}})
 		}
 	}
 }
 
+//
 func benchmarkRemove(b *testing.B, tree *Tree, size int) {
 	for i := 0; i < b.N; i++ {
 		for n := 0; n < size; n++ {
-			tree.Remove(n)
+			tree.Remove(Item3{key: n})
 		}
 	}
 }
@@ -1132,9 +1207,9 @@ func benchmarkRemove(b *testing.B, tree *Tree, size int) {
 func BenchmarkBTreeGet100(b *testing.B) {
 	b.StopTimer()
 	size := 100
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkGet(b, tree, size)
@@ -1143,9 +1218,9 @@ func BenchmarkBTreeGet100(b *testing.B) {
 func BenchmarkBTreeGet1000(b *testing.B) {
 	b.StopTimer()
 	size := 1000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkGet(b, tree, size)
@@ -1154,20 +1229,21 @@ func BenchmarkBTreeGet1000(b *testing.B) {
 func BenchmarkBTreeGet10000(b *testing.B) {
 	b.StopTimer()
 	size := 10000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkGet(b, tree, size)
 }
 
+//
 func BenchmarkBTreeGet100000(b *testing.B) {
 	b.StopTimer()
 	size := 100000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkGet(b, tree, size)
@@ -1176,7 +1252,7 @@ func BenchmarkBTreeGet100000(b *testing.B) {
 func BenchmarkBTreePut100(b *testing.B) {
 	b.StopTimer()
 	size := 100
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	b.StartTimer()
 	benchmarkPut(b, tree, size)
 }
@@ -1184,31 +1260,33 @@ func BenchmarkBTreePut100(b *testing.B) {
 func BenchmarkBTreePut1000(b *testing.B) {
 	b.StopTimer()
 	size := 1000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkPut(b, tree, size)
 }
 
+//
 func BenchmarkBTreePut10000(b *testing.B) {
 	b.StopTimer()
 	size := 10000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkPut(b, tree, size)
 }
 
+//
 func BenchmarkBTreePut100000(b *testing.B) {
 	b.StopTimer()
 	size := 100000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkPut(b, tree, size)
@@ -1217,31 +1295,33 @@ func BenchmarkBTreePut100000(b *testing.B) {
 func BenchmarkBTreeRemove100(b *testing.B) {
 	b.StopTimer()
 	size := 100
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkRemove(b, tree, size)
 }
 
+//
 func BenchmarkBTreeRemove1000(b *testing.B) {
 	b.StopTimer()
 	size := 1000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkRemove(b, tree, size)
 }
 
+//
 func BenchmarkBTreeRemove10000(b *testing.B) {
 	b.StopTimer()
 	size := 10000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkRemove(b, tree, size)
@@ -1250,9 +1330,9 @@ func BenchmarkBTreeRemove10000(b *testing.B) {
 func BenchmarkBTreeRemove100000(b *testing.B) {
 	b.StopTimer()
 	size := 100000
-	tree := NewWithIntComparator(128)
+	tree := NewWith(128)
 	for n := 0; n < size; n++ {
-		tree.Put(n, struct{}{})
+		tree.Put(Item3{key: n, value: struct{}{}})
 	}
 	b.StartTimer()
 	benchmarkRemove(b, tree, size)

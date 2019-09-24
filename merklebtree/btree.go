@@ -16,70 +16,56 @@
 // References: https://en.wikipedia.org/wiki/B-tree
 package merklebtree
 
-import (
-	"bytes"
-	"fmt"
-	"github.com/emirpasic/gods/trees"
-	"github.com/emirpasic/gods/utils"
-	"strings"
-)
-
-func assertTreeImplementation() {
-	var _ trees.Tree = (*Tree)(nil)
-}
-
 // Tree holds elements of the B-tree
 type Tree struct {
-	Root       *Node            // Root node
-	Comparator utils.Comparator // Key comparator
-	size       int              // Total number of keys in the tree
-	m          int              // order (maximum number of children)
+	Root *Node // Root node
+	size int   // Total number of keys in the tree
+	m    int   // order (maximum number of children)
 }
 
 // Node is a single element within the tree
 type Node struct {
 	Parent   *Node
-	Entries  []*Entry // Contained keys in node
-	Children []*Node  // Children nodes
+	Contents []*Content // Contained keys in node
+	Children []*Node    // Children nodes
 }
 
-// Entry represents the key-value pair contained within nodes
-type Entry struct {
-	Key   interface{}
-	Value interface{}
+func (node *Node) Put(item Content) {
+	node.Contents = append(node.Contents, &item)
+}
+
+type Content interface {
+	// Less tests whether the current item is less than the given argument.
+
+	// If a.Comparator(b) return
+	// negative , if a < b
+	// zero     , if a == b
+	// positive , if a > b
+
+	Comparator(than Content) int
 }
 
 // NewWith instantiates a B-tree with the order (maximum number of children) and a custom key comparator.
-func NewWith(order int, comparator utils.Comparator) *Tree {
+func NewWith(order int) *Tree {
 	if order < 3 {
 		panic("Invalid order, should be at least 3")
 	}
-	return &Tree{m: order, Comparator: comparator}
-}
-
-// NewWithIntComparator instantiates a B-tree with the order (maximum number of children) and the IntComparator, i.e. keys are of type int.
-func NewWithIntComparator(order int) *Tree {
-	return NewWith(order, utils.IntComparator)
-}
-
-// NewWithStringComparator instantiates a B-tree with the order (maximum number of children) and the StringComparator, i.e. keys are of type string.
-func NewWithStringComparator(order int) *Tree {
-	return NewWith(order, utils.StringComparator)
+	return &Tree{m: order}
 }
 
 // Put inserts key-value pair node into the tree.
 // If key already exists, then its value is updated with the new value.
 // Key should adhere to the comparator's type assertion, otherwise method panics.
-func (tree *Tree) Put(key interface{}, value interface{}) {
-	entry := &Entry{Key: key, Value: value}
+func (tree *Tree) Put(item Content) {
+	content := &item
 
 	if tree.Root == nil {
-		tree.Root = &Node{Entries: []*Entry{entry}, Children: []*Node{}}
+		tree.Root = &Node{Contents: []*Content{content}, Children: []*Node{}}
 		tree.size++
 		return
 	}
 
-	if tree.insert(tree.Root, entry) {
+	if tree.insert(tree.Root, content) {
 		tree.size++
 	}
 }
@@ -87,18 +73,18 @@ func (tree *Tree) Put(key interface{}, value interface{}) {
 // Get searches the node in the tree by key and returns its value or nil if key is not found in tree.
 // Second return parameter is true if key was found, otherwise false.
 // Key should adhere to the comparator's type assertion, otherwise method panics.
-func (tree *Tree) Get(key interface{}) (value interface{}, found bool) {
-	node, index, found := tree.searchRecursively(tree.Root, key)
+func (tree *Tree) Get(item Content) (result Content, found bool) {
+	node, index, found := tree.searchRecursively(tree.Root, item)
 	if found {
-		return node.Entries[index].Value, true
+		return *node.Contents[index], true
 	}
-	return nil, false
+	return item, false
 }
 
 // Remove remove the node from the tree by key.
 // Key should adhere to the comparator's type assertion, otherwise method panics.
-func (tree *Tree) Remove(key interface{}) {
-	node, index, found := tree.searchRecursively(tree.Root, key)
+func (tree *Tree) Remove(item Content) {
+	node, index, found := tree.searchRecursively(tree.Root, item)
 	if found {
 		tree.delete(node, index)
 		tree.size--
@@ -116,23 +102,13 @@ func (tree *Tree) Size() int {
 }
 
 // Keys returns all keys in-order
-func (tree *Tree) Keys() []interface{} {
-	keys := make([]interface{}, tree.size)
+func (tree *Tree) Contents() []Content {
+	contents := make([]Content, tree.size)
 	it := tree.Iterator()
 	for i := 0; it.Next(); i++ {
-		keys[i] = it.Key()
+		contents[i] = it.Item()
 	}
-	return keys
-}
-
-// Values returns all values in-order based on the key.
-func (tree *Tree) Values() []interface{} {
-	values := make([]interface{}, tree.size)
-	it := tree.Iterator()
-	for i := 0; it.Next(); i++ {
-		values[i] = it.Value()
-	}
-	return values
+	return contents
 }
 
 // Clear removes all nodes from the tree.
@@ -152,17 +128,9 @@ func (tree *Tree) Left() *Node {
 }
 
 // LeftKey returns the left-most (min) key or nil if tree is empty.
-func (tree *Tree) LeftKey() interface{} {
+func (tree *Tree) LeftItem() Content {
 	if left := tree.Left(); left != nil {
-		return left.Entries[0].Key
-	}
-	return nil
-}
-
-// LeftValue returns the left-most value or nil if tree is empty.
-func (tree *Tree) LeftValue() interface{} {
-	if left := tree.Left(); left != nil {
-		return left.Entries[0].Value
+		return *left.Contents[0]
 	}
 	return nil
 }
@@ -173,48 +141,11 @@ func (tree *Tree) Right() *Node {
 }
 
 // RightKey returns the right-most (max) key or nil if tree is empty.
-func (tree *Tree) RightKey() interface{} {
+func (tree *Tree) RightItem() Content {
 	if right := tree.Right(); right != nil {
-		return right.Entries[len(right.Entries)-1].Key
+		return *right.Contents[len(right.Contents)-1]
 	}
 	return nil
-}
-
-// RightValue returns the right-most value or nil if tree is empty.
-func (tree *Tree) RightValue() interface{} {
-	if right := tree.Right(); right != nil {
-		return right.Entries[len(right.Entries)-1].Value
-	}
-	return nil
-}
-
-// String returns a string representation of container (for debugging purposes)
-func (tree *Tree) String() string {
-	var buffer bytes.Buffer
-	if _, err := buffer.WriteString("BTree\n"); err != nil {
-	}
-	if !tree.Empty() {
-		tree.output(&buffer, tree.Root, 0, true)
-	}
-	return buffer.String()
-}
-
-func (entry *Entry) String() string {
-	return fmt.Sprintf("%v", entry.Key)
-}
-
-func (tree *Tree) output(buffer *bytes.Buffer, node *Node, level int, isTail bool) {
-	for e := 0; e < len(node.Entries)+1; e++ {
-		if e < len(node.Children) {
-			tree.output(buffer, node.Children[e], level+1, true)
-		}
-		if e < len(node.Entries) {
-			if _, err := buffer.WriteString(strings.Repeat("    ", level)); err != nil {
-			}
-			if _, err := buffer.WriteString(fmt.Sprintf("%v", node.Entries[e].Key) + "\n"); err != nil {
-			}
-		}
-	}
 }
 
 func (node *Node) height() int {
@@ -233,11 +164,11 @@ func (tree *Tree) isLeaf(node *Node) bool {
 }
 
 func (tree *Tree) isFull(node *Node) bool {
-	return len(node.Entries) == tree.maxEntries()
+	return len(node.Contents) == tree.maxContents()
 }
 
 func (tree *Tree) shouldSplit(node *Node) bool {
-	return len(node.Entries) > tree.maxEntries()
+	return len(node.Contents) > tree.maxContents()
 }
 
 func (tree *Tree) maxChildren() int {
@@ -248,11 +179,11 @@ func (tree *Tree) minChildren() int {
 	return (tree.m + 1) / 2 // ceil(m/2)
 }
 
-func (tree *Tree) maxEntries() int {
+func (tree *Tree) maxContents() int {
 	return tree.maxChildren() - 1
 }
 
-func (tree *Tree) minEntries() int {
+func (tree *Tree) minContents() int {
 	return tree.minChildren() - 1
 }
 
@@ -260,13 +191,13 @@ func (tree *Tree) middle() int {
 	return (tree.m - 1) / 2 // "-1" to favor right nodes to have more keys when splitting
 }
 
-// search searches only within the single node among its entries
-func (tree *Tree) search(node *Node, key interface{}) (index int, found bool) {
-	low, high := 0, len(node.Entries)-1
+// search searches only within the single node among its contents
+func (tree *Tree) search(node *Node, item Content) (index int, found bool) {
+	low, high := 0, len(node.Contents)-1
 	var mid int
 	for low <= high {
 		mid = (high + low) / 2
-		compare := tree.Comparator(key, node.Entries[mid].Key)
+		compare := item.Comparator(*node.Contents[mid])
 		switch {
 		case compare > 0:
 			low = mid + 1
@@ -280,13 +211,13 @@ func (tree *Tree) search(node *Node, key interface{}) (index int, found bool) {
 }
 
 // searchRecursively searches recursively down the tree starting at the startNode
-func (tree *Tree) searchRecursively(startNode *Node, key interface{}) (node *Node, index int, found bool) {
+func (tree *Tree) searchRecursively(startNode *Node, item Content) (node *Node, index int, found bool) {
 	if tree.Empty() {
 		return nil, -1, false
 	}
 	node = startNode
 	for {
-		index, found = tree.search(node, key)
+		index, found = tree.search(node, item)
 		if found {
 			return node, index, true
 		}
@@ -297,34 +228,34 @@ func (tree *Tree) searchRecursively(startNode *Node, key interface{}) (node *Nod
 	}
 }
 
-func (tree *Tree) insert(node *Node, entry *Entry) (inserted bool) {
+func (tree *Tree) insert(node *Node, content *Content) (inserted bool) {
 	if tree.isLeaf(node) {
-		return tree.insertIntoLeaf(node, entry)
+		return tree.insertIntoLeaf(node, content)
 	}
-	return tree.insertIntoInternal(node, entry)
+	return tree.insertIntoInternal(node, content)
 }
 
-func (tree *Tree) insertIntoLeaf(node *Node, entry *Entry) (inserted bool) {
-	insertPosition, found := tree.search(node, entry.Key)
+func (tree *Tree) insertIntoLeaf(node *Node, content *Content) (inserted bool) {
+	insertPosition, found := tree.search(node, *content)
 	if found {
-		node.Entries[insertPosition] = entry
+		node.Contents[insertPosition] = content
 		return false
 	}
-	// Insert entry's key in the middle of the node
-	node.Entries = append(node.Entries, nil)
-	copy(node.Entries[insertPosition+1:], node.Entries[insertPosition:])
-	node.Entries[insertPosition] = entry
+	// Insert content's key in the middle of the node
+	node.Contents = append(node.Contents, nil)
+	copy(node.Contents[insertPosition+1:], node.Contents[insertPosition:])
+	node.Contents[insertPosition] = content
 	tree.split(node)
 	return true
 }
 
-func (tree *Tree) insertIntoInternal(node *Node, entry *Entry) (inserted bool) {
-	insertPosition, found := tree.search(node, entry.Key)
+func (tree *Tree) insertIntoInternal(node *Node, content *Content) (inserted bool) {
+	insertPosition, found := tree.search(node, *content)
 	if found {
-		node.Entries[insertPosition] = entry
+		node.Contents[insertPosition] = content
 		return false
 	}
-	return tree.insert(node.Children[insertPosition], entry)
+	return tree.insert(node.Children[insertPosition], content)
 }
 
 func (tree *Tree) split(node *Node) {
@@ -344,8 +275,8 @@ func (tree *Tree) splitNonRoot(node *Node) {
 	middle := tree.middle()
 	parent := node.Parent
 
-	left := &Node{Entries: append([]*Entry(nil), node.Entries[:middle]...), Parent: parent}
-	right := &Node{Entries: append([]*Entry(nil), node.Entries[middle+1:]...), Parent: parent}
+	left := &Node{Contents: append([]*Content(nil), node.Contents[:middle]...), Parent: parent}
+	right := &Node{Contents: append([]*Content(nil), node.Contents[middle+1:]...), Parent: parent}
 
 	// Move children from the node to be split into left and right nodes
 	if !tree.isLeaf(node) {
@@ -355,12 +286,12 @@ func (tree *Tree) splitNonRoot(node *Node) {
 		setParent(right.Children, right)
 	}
 
-	insertPosition, _ := tree.search(parent, node.Entries[middle].Key)
+	insertPosition, _ := tree.search(parent, *node.Contents[middle])
 
 	// Insert middle key into parent
-	parent.Entries = append(parent.Entries, nil)
-	copy(parent.Entries[insertPosition+1:], parent.Entries[insertPosition:])
-	parent.Entries[insertPosition] = node.Entries[middle]
+	parent.Contents = append(parent.Contents, nil)
+	copy(parent.Contents[insertPosition+1:], parent.Contents[insertPosition:])
+	parent.Contents[insertPosition] = node.Contents[middle]
 
 	// Set child left of inserted key in parent to the created left node
 	parent.Children[insertPosition] = left
@@ -376,8 +307,8 @@ func (tree *Tree) splitNonRoot(node *Node) {
 func (tree *Tree) splitRoot() {
 	middle := tree.middle()
 
-	left := &Node{Entries: append([]*Entry(nil), tree.Root.Entries[:middle]...)}
-	right := &Node{Entries: append([]*Entry(nil), tree.Root.Entries[middle+1:]...)}
+	left := &Node{Contents: append([]*Content(nil), tree.Root.Contents[:middle]...)}
+	right := &Node{Contents: append([]*Content(nil), tree.Root.Contents[middle+1:]...)}
 
 	// Move children from the node to be split into left and right nodes
 	if !tree.isLeaf(tree.Root) {
@@ -387,9 +318,9 @@ func (tree *Tree) splitRoot() {
 		setParent(right.Children, right)
 	}
 
-	// Root is a node with one entry and two children (left and right)
+	// Root is a node with one content and two children (left and right)
 	newRoot := &Node{
-		Entries:  []*Entry{tree.Root.Entries[middle]},
+		Contents: []*Content{tree.Root.Contents[middle]},
 		Children: []*Node{left, right},
 	}
 
@@ -432,9 +363,9 @@ func (tree *Tree) right(node *Node) *Node {
 
 // leftSibling returns the node's left sibling and child index (in parent) if it exists, otherwise (nil,-1)
 // key is any of keys in node (could even be deleted).
-func (tree *Tree) leftSibling(node *Node, key interface{}) (*Node, int) {
+func (tree *Tree) leftSibling(node *Node, item Content) (*Node, int) {
 	if node.Parent != nil {
-		index, _ := tree.search(node.Parent, key)
+		index, _ := tree.search(node.Parent, item)
 		index--
 		if index >= 0 && index < len(node.Parent.Children) {
 			return node.Parent.Children[index], index
@@ -445,9 +376,9 @@ func (tree *Tree) leftSibling(node *Node, key interface{}) (*Node, int) {
 
 // rightSibling returns the node's right sibling and child index (in parent) if it exists, otherwise (nil,-1)
 // key is any of keys in node (could even be deleted).
-func (tree *Tree) rightSibling(node *Node, key interface{}) (*Node, int) {
+func (tree *Tree) rightSibling(node *Node, item Content) (*Node, int) {
 	if node.Parent != nil {
-		index, _ := tree.search(node.Parent, key)
+		index, _ := tree.search(node.Parent, item)
 		index++
 		if index < len(node.Parent.Children) {
 			return node.Parent.Children[index], index
@@ -456,15 +387,15 @@ func (tree *Tree) rightSibling(node *Node, key interface{}) (*Node, int) {
 	return nil, -1
 }
 
-// delete deletes an entry in node at entries' index
+// delete deletes an content in node at contents' index
 // ref.: https://en.wikipedia.org/wiki/B-tree#Deletion
 func (tree *Tree) delete(node *Node, index int) {
 	// deleting from a leaf node
 	if tree.isLeaf(node) {
-		deletedKey := node.Entries[index].Key
-		tree.deleteEntry(node, index)
-		tree.rebalance(node, deletedKey)
-		if len(tree.Root.Entries) == 0 {
+		deletedKey := node.Contents[index]
+		tree.deleteContent(node, index)
+		tree.rebalance(node, *deletedKey)
+		if len(tree.Root.Contents) == 0 {
 			tree.Root = nil
 		}
 		return
@@ -472,28 +403,28 @@ func (tree *Tree) delete(node *Node, index int) {
 
 	// deleting from an internal node
 	leftLargestNode := tree.right(node.Children[index]) // largest node in the left sub-tree (assumed to exist)
-	leftLargestEntryIndex := len(leftLargestNode.Entries) - 1
-	node.Entries[index] = leftLargestNode.Entries[leftLargestEntryIndex]
-	deletedKey := leftLargestNode.Entries[leftLargestEntryIndex].Key
-	tree.deleteEntry(leftLargestNode, leftLargestEntryIndex)
-	tree.rebalance(leftLargestNode, deletedKey)
+	leftLargestContentIndex := len(leftLargestNode.Contents) - 1
+	node.Contents[index] = leftLargestNode.Contents[leftLargestContentIndex]
+	deletedKey := leftLargestNode.Contents[leftLargestContentIndex]
+	tree.deleteContent(leftLargestNode, leftLargestContentIndex)
+	tree.rebalance(leftLargestNode, *deletedKey)
 }
 
 // rebalance rebalances the tree after deletion if necessary and returns true, otherwise false.
-// Note that we first delete the entry and then call rebalance, thus the passed deleted key as reference.
-func (tree *Tree) rebalance(node *Node, deletedKey interface{}) {
+// Note that we first delete the content and then call rebalance, thus the passed deleted key as reference.
+func (tree *Tree) rebalance(node *Node, deletedItem Content) {
 	// check if rebalancing is needed
-	if node == nil || len(node.Entries) >= tree.minEntries() {
+	if node == nil || len(node.Contents) >= tree.minContents() {
 		return
 	}
 
 	// try to borrow from left sibling
-	leftSibling, leftSiblingIndex := tree.leftSibling(node, deletedKey)
-	if leftSibling != nil && len(leftSibling.Entries) > tree.minEntries() {
+	leftSibling, leftSiblingIndex := tree.leftSibling(node, deletedItem)
+	if leftSibling != nil && len(leftSibling.Contents) > tree.minContents() {
 		// rotate right
-		node.Entries = append([]*Entry{node.Parent.Entries[leftSiblingIndex]}, node.Entries...) // prepend parent's separator entry to node's entries
-		node.Parent.Entries[leftSiblingIndex] = leftSibling.Entries[len(leftSibling.Entries)-1]
-		tree.deleteEntry(leftSibling, len(leftSibling.Entries)-1)
+		node.Contents = append([]*Content{node.Parent.Contents[leftSiblingIndex]}, node.Contents...) // prepend parent's separator content to node's contents
+		node.Parent.Contents[leftSiblingIndex] = leftSibling.Contents[len(leftSibling.Contents)-1]
+		tree.deleteContent(leftSibling, len(leftSibling.Contents)-1)
 		if !tree.isLeaf(leftSibling) {
 			leftSiblingRightMostChild := leftSibling.Children[len(leftSibling.Children)-1]
 			leftSiblingRightMostChild.Parent = node
@@ -504,12 +435,12 @@ func (tree *Tree) rebalance(node *Node, deletedKey interface{}) {
 	}
 
 	// try to borrow from right sibling
-	rightSibling, rightSiblingIndex := tree.rightSibling(node, deletedKey)
-	if rightSibling != nil && len(rightSibling.Entries) > tree.minEntries() {
+	rightSibling, rightSiblingIndex := tree.rightSibling(node, deletedItem)
+	if rightSibling != nil && len(rightSibling.Contents) > tree.minContents() {
 		// rotate left
-		node.Entries = append(node.Entries, node.Parent.Entries[rightSiblingIndex-1]) // append parent's separator entry to node's entries
-		node.Parent.Entries[rightSiblingIndex-1] = rightSibling.Entries[0]
-		tree.deleteEntry(rightSibling, 0)
+		node.Contents = append(node.Contents, node.Parent.Contents[rightSiblingIndex-1]) // append parent's separator content to node's contents
+		node.Parent.Contents[rightSiblingIndex-1] = rightSibling.Contents[0]
+		tree.deleteContent(rightSibling, 0)
 		if !tree.isLeaf(rightSibling) {
 			rightSiblingLeftMostChild := rightSibling.Children[0]
 			rightSiblingLeftMostChild.Parent = node
@@ -522,32 +453,32 @@ func (tree *Tree) rebalance(node *Node, deletedKey interface{}) {
 	// merge with siblings
 	if rightSibling != nil {
 		// merge with right sibling
-		node.Entries = append(node.Entries, node.Parent.Entries[rightSiblingIndex-1])
-		node.Entries = append(node.Entries, rightSibling.Entries...)
-		deletedKey = node.Parent.Entries[rightSiblingIndex-1].Key
-		tree.deleteEntry(node.Parent, rightSiblingIndex-1)
+		node.Contents = append(node.Contents, node.Parent.Contents[rightSiblingIndex-1])
+		node.Contents = append(node.Contents, rightSibling.Contents...)
+		deletedItem = *node.Parent.Contents[rightSiblingIndex-1]
+		tree.deleteContent(node.Parent, rightSiblingIndex-1)
 		tree.appendChildren(node.Parent.Children[rightSiblingIndex], node)
 		tree.deleteChild(node.Parent, rightSiblingIndex)
 	} else if leftSibling != nil {
 		// merge with left sibling
-		entries := append([]*Entry(nil), leftSibling.Entries...)
-		entries = append(entries, node.Parent.Entries[leftSiblingIndex])
-		node.Entries = append(entries, node.Entries...)
-		deletedKey = node.Parent.Entries[leftSiblingIndex].Key
-		tree.deleteEntry(node.Parent, leftSiblingIndex)
+		contents := append([]*Content(nil), leftSibling.Contents...)
+		contents = append(contents, node.Parent.Contents[leftSiblingIndex])
+		node.Contents = append(contents, node.Contents...)
+		deletedItem = *node.Parent.Contents[leftSiblingIndex]
+		tree.deleteContent(node.Parent, leftSiblingIndex)
 		tree.prependChildren(node.Parent.Children[leftSiblingIndex], node)
 		tree.deleteChild(node.Parent, leftSiblingIndex)
 	}
 
 	// make the merged node the root if its parent was the root and the root is empty
-	if node.Parent == tree.Root && len(tree.Root.Entries) == 0 {
+	if node.Parent == tree.Root && len(tree.Root.Contents) == 0 {
 		tree.Root = node
 		node.Parent = nil
 		return
 	}
 
 	// parent might underflow, so try to rebalance if necessary
-	tree.rebalance(node.Parent, deletedKey)
+	tree.rebalance(node.Parent, deletedItem)
 }
 
 func (tree *Tree) prependChildren(fromNode *Node, toNode *Node) {
@@ -561,10 +492,10 @@ func (tree *Tree) appendChildren(fromNode *Node, toNode *Node) {
 	setParent(fromNode.Children, toNode)
 }
 
-func (tree *Tree) deleteEntry(node *Node, index int) {
-	copy(node.Entries[index:], node.Entries[index+1:])
-	node.Entries[len(node.Entries)-1] = nil
-	node.Entries = node.Entries[:len(node.Entries)-1]
+func (tree *Tree) deleteContent(node *Node, index int) {
+	copy(node.Contents[index:], node.Contents[index+1:])
+	node.Contents[len(node.Contents)-1] = nil
+	node.Contents = node.Contents[:len(node.Contents)-1]
 }
 
 func (tree *Tree) deleteChild(node *Node, index int) {
