@@ -16,6 +16,11 @@
 // References: https://en.wikipedia.org/wiki/B-tree
 package merklebtree
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
+
 // Tree holds elements of the B-tree
 type Tree struct {
 	Root *Node // Root node
@@ -26,6 +31,7 @@ type Tree struct {
 // Node is a single element within the tree
 type Node struct {
 	Parent   *Node
+	Hash     []byte
 	Contents []*Content // Contained keys in node
 	Children []*Node    // Children nodes
 }
@@ -34,14 +40,53 @@ func (node *Node) Put(item Content) {
 	node.Contents = append(node.Contents, &item)
 }
 
+// CalculateHash update the merkle hash of node,include children and content.
+func (tree *Tree) CalculateHash(node *Node) ([]byte, error) {
+	h := sha256.New()
+	var bytes []byte
+
+	for _, content := range node.Contents {
+		hash, err := (*content).CalculateHash()
+		if err != nil {
+			return nil, err
+		}
+		bytes = append(bytes, hash...)
+	}
+
+	for _, children := range node.Children {
+		bytes = append(bytes, children.Hash...)
+	}
+
+	if _, err := h.Write(bytes); err != nil {
+		return nil, err
+	}
+
+	node.Hash = h.Sum(nil)
+
+	return node.Hash, nil
+}
+
+//ReCalculateMerkleRoot update Merkleroot from node to root node.
+func (tree *Tree) ReCalculateMerkleRoot(node *Node) ([]byte, error) {
+	if node == tree.Root {
+		return tree.CalculateHash(node)
+	} else {
+		_, err := tree.CalculateHash(node)
+		if err != nil {
+			return nil, err
+		}
+		return tree.ReCalculateMerkleRoot(node.Parent)
+	}
+}
+
 type Content interface {
-	// Less tests whether the current item is less than the given argument.
+	// CalculateHash calculate the hash of content
+	CalculateHash() ([]byte, error)
 
 	// If a.Comparator(b) return
 	// negative , if a < b
 	// zero     , if a == b
 	// positive , if a > b
-
 	Comparator(than Content) int
 }
 
@@ -62,6 +107,13 @@ func (tree *Tree) Put(item Content) {
 	if tree.Root == nil {
 		tree.Root = &Node{Contents: []*Content{content}, Children: []*Node{}}
 		tree.size++
+
+		//calculate merkle root hash
+		_, err := tree.ReCalculateMerkleRoot(tree.Root)
+		if err != nil {
+			panic(err)
+		}
+
 		return
 	}
 
@@ -115,6 +167,14 @@ func (tree *Tree) Contents() []Content {
 func (tree *Tree) Clear() {
 	tree.Root = nil
 	tree.size = 0
+}
+
+func (tree *Tree) MerkleBTreeRoot() string {
+	if tree.Root == nil {
+		return ""
+	} else {
+		return hex.EncodeToString(tree.Root.Hash)
+	}
 }
 
 // Height returns the height of the tree.
@@ -210,6 +270,50 @@ func (tree *Tree) search(node *Node, item Content) (index int, found bool) {
 	return low, false
 }
 
+// deep search the tree and return the node
+func (tree *Tree) deepSearch() [][]*Node {
+	var nodes [][]*Node
+	if tree.Root == nil {
+		return nodes
+	}
+	var startnodes, nextnodes []*Node
+	startnodes = append(startnodes, tree.Root)
+	nodes = append(nodes, startnodes)
+
+	for true {
+		for _, node := range startnodes {
+			nextnodes = append(nextnodes, node.Children...)
+		}
+		nodes = append(nodes, nextnodes)
+		startnodes = nextnodes
+		nextnodes = nil
+		if len(startnodes) == 0 {
+			break
+		}
+		if tree.isLeaf(startnodes[0]) {
+			break
+		}
+	}
+
+	return nodes
+}
+
+// calculateMerkleRoot by iterator the tree
+func (tree *Tree) calculateMerkleRoot() string {
+	if tree.Root == nil {
+		return ""
+	}
+	nodes := tree.deepSearch()
+	for i := len(nodes) - 1; i > 0; i-- {
+		for j := 0; j < len(nodes[i]); j++ {
+			//reset nodes[i][j] Hash
+			nodes[i][j].Hash = nil
+			tree.CalculateHash(nodes[i][j])
+		}
+	}
+	return hex.EncodeToString(nodes[0][0].Hash)
+}
+
 // searchRecursively searches recursively down the tree starting at the startNode
 func (tree *Tree) searchRecursively(startNode *Node, item Content) (node *Node, index int, found bool) {
 	if tree.Empty() {
@@ -239,6 +343,7 @@ func (tree *Tree) insertIntoLeaf(node *Node, content *Content) (inserted bool) {
 	insertPosition, found := tree.search(node, *content)
 	if found {
 		node.Contents[insertPosition] = content
+		tree.ReCalculateMerkleRoot(node)
 		return false
 	}
 	// Insert content's key in the middle of the node
@@ -253,6 +358,7 @@ func (tree *Tree) insertIntoInternal(node *Node, content *Content) (inserted boo
 	insertPosition, found := tree.search(node, *content)
 	if found {
 		node.Contents[insertPosition] = content
+		tree.ReCalculateMerkleRoot(node)
 		return false
 	}
 	return tree.insert(node.Children[insertPosition], content)
@@ -260,6 +366,7 @@ func (tree *Tree) insertIntoInternal(node *Node, content *Content) (inserted boo
 
 func (tree *Tree) split(node *Node) {
 	if !tree.shouldSplit(node) {
+		tree.ReCalculateMerkleRoot(node)
 		return
 	}
 
@@ -301,6 +408,10 @@ func (tree *Tree) splitNonRoot(node *Node) {
 	copy(parent.Children[insertPosition+2:], parent.Children[insertPosition+1:])
 	parent.Children[insertPosition+1] = right
 
+	tree.CalculateHash(left)
+	tree.CalculateHash(right)
+	tree.CalculateHash(parent)
+
 	tree.split(parent)
 }
 
@@ -317,6 +428,8 @@ func (tree *Tree) splitRoot() {
 		setParent(left.Children, left)
 		setParent(right.Children, right)
 	}
+	tree.CalculateHash(left)
+	tree.CalculateHash(right)
 
 	// Root is a node with one content and two children (left and right)
 	newRoot := &Node{
@@ -327,6 +440,7 @@ func (tree *Tree) splitRoot() {
 	left.Parent = newRoot
 	right.Parent = newRoot
 	tree.Root = newRoot
+	tree.CalculateHash(newRoot)
 }
 
 func setParent(nodes []*Node, parent *Node) {
@@ -415,6 +529,11 @@ func (tree *Tree) delete(node *Node, index int) {
 func (tree *Tree) rebalance(node *Node, deletedItem Content) {
 	// check if rebalancing is needed
 	if node == nil || len(node.Contents) >= tree.minContents() {
+		//recalculate merkle root from leaf node
+		if node != nil {
+			//root is not nil
+			tree.ReCalculateMerkleRoot(node)
+		}
 		return
 	}
 
@@ -431,6 +550,8 @@ func (tree *Tree) rebalance(node *Node, deletedItem Content) {
 			node.Children = append([]*Node{leftSiblingRightMostChild}, node.Children...)
 			tree.deleteChild(leftSibling, len(leftSibling.Children)-1)
 		}
+		tree.CalculateHash(node)
+		tree.CalculateHash(leftSibling)
 		return
 	}
 
@@ -447,6 +568,8 @@ func (tree *Tree) rebalance(node *Node, deletedItem Content) {
 			node.Children = append(node.Children, rightSiblingLeftMostChild)
 			tree.deleteChild(rightSibling, 0)
 		}
+		tree.CalculateHash(node)
+		tree.CalculateHash(rightSibling)
 		return
 	}
 
@@ -459,6 +582,7 @@ func (tree *Tree) rebalance(node *Node, deletedItem Content) {
 		tree.deleteContent(node.Parent, rightSiblingIndex-1)
 		tree.appendChildren(node.Parent.Children[rightSiblingIndex], node)
 		tree.deleteChild(node.Parent, rightSiblingIndex)
+		tree.CalculateHash(node)
 	} else if leftSibling != nil {
 		// merge with left sibling
 		contents := append([]*Content(nil), leftSibling.Contents...)
@@ -468,12 +592,14 @@ func (tree *Tree) rebalance(node *Node, deletedItem Content) {
 		tree.deleteContent(node.Parent, leftSiblingIndex)
 		tree.prependChildren(node.Parent.Children[leftSiblingIndex], node)
 		tree.deleteChild(node.Parent, leftSiblingIndex)
+		tree.CalculateHash(node)
 	}
 
 	// make the merged node the root if its parent was the root and the root is empty
 	if node.Parent == tree.Root && len(tree.Root.Contents) == 0 {
 		tree.Root = node
 		node.Parent = nil
+		tree.CalculateHash(tree.Root)
 		return
 	}
 
