@@ -270,8 +270,8 @@ func (tree *Tree) search(node *Node, item Content) (index int, found bool) {
 	return low, false
 }
 
-// deep search the tree and return the node
-func (tree *Tree) deepSearch() [][]*Node {
+// level traversal the tree and return the node
+func (tree *Tree) levelTraversal() [][]*Node {
 	var nodes [][]*Node
 	if tree.Root == nil {
 		return nodes
@@ -298,12 +298,12 @@ func (tree *Tree) deepSearch() [][]*Node {
 	return nodes
 }
 
-// calculateMerkleRoot by iterator the tree
+// calculate the MerkleRoot of tree
 func (tree *Tree) calculateMerkleRoot() string {
 	if tree.Root == nil {
 		return ""
 	}
-	nodes := tree.deepSearch()
+	nodes := tree.levelTraversal()
 	for i := len(nodes) - 1; i > 0; i-- {
 		for j := 0; j < len(nodes[i]); j++ {
 			//reset nodes[i][j] Hash
