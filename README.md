@@ -57,7 +57,7 @@ func (t TestContent) CalculateHash() ([]byte, error) {
 func (t TestContent) Equals(other merkletree.Content) (bool, error) {
   otherTC, ok := other.(TestContent).x
   if !ok {
-      return false, errors.New("value is not of type TestContent")
+    return false, errors.New("value is not of type TestContent")
   }    
   return t.x == otherTC.x, nil
 }
