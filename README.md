@@ -32,6 +32,7 @@ package main
 
 import (
   "crypto/sha256"
+  "errors"
   "log"
 
   "github.com/cbergoon/merkletree"
@@ -54,7 +55,11 @@ func (t TestContent) CalculateHash() ([]byte, error) {
 
 //Equals tests for equality of two Contents
 func (t TestContent) Equals(other merkletree.Content) (bool, error) {
-  return t.x == other.(TestContent).x, nil
+  otherTC, ok := other.(TestContent).x
+  if !ok {
+      return false, errors.New("value is not of type TestContent")
+  }    
+  return t.x == otherTC.x, nil
 }
 
 func main() {
