@@ -564,7 +564,7 @@ func TestMerkleTree_MerklePath(t *testing.T) {
 		for j := 0; j < len(table[i].contents); j++ {
 			merklePath, index, _ := tree.GetMerklePath(table[i].contents[j])
 
-			hash, err := tree.Leafs[j].calculateNodeHash()
+			hash, err := tree.Leafs[j].calculateNodeHash(false)
 			if err != nil {
 				t.Errorf("[case:%d] error: calculateNodeHash error: %v", table[i].testCaseId, err)
 			}
