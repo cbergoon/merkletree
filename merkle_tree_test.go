@@ -65,6 +65,7 @@ var table = []struct {
 	hashStrategy        func() hash.Hash
 	hashStrategyName    string
 	defaultHashStrategy bool
+	sort                bool
 	contents            []Content
 	expectedHash        []byte
 	notInContents       Content
@@ -74,6 +75,7 @@ var table = []struct {
 		hashStrategy:        sha256.New,
 		hashStrategyName:    "sha256",
 		defaultHashStrategy: true,
+		sort:                false,
 		contents: []Content{
 			TestSHA256Content{
 				x: "Hello",
@@ -96,6 +98,7 @@ var table = []struct {
 		hashStrategy:        sha256.New,
 		hashStrategyName:    "sha256",
 		defaultHashStrategy: true,
+		sort:                false,
 		contents: []Content{
 			TestSHA256Content{
 				x: "Hello",
@@ -115,6 +118,7 @@ var table = []struct {
 		hashStrategy:        sha256.New,
 		hashStrategyName:    "sha256",
 		defaultHashStrategy: true,
+		sort:                false,
 		contents: []Content{
 			TestSHA256Content{
 				x: "Hello",
@@ -140,6 +144,7 @@ var table = []struct {
 		hashStrategy:        sha256.New,
 		hashStrategyName:    "sha256",
 		defaultHashStrategy: true,
+		sort:                false,
 		contents: []Content{
 			TestSHA256Content{
 				x: "123",
@@ -174,6 +179,7 @@ var table = []struct {
 		hashStrategy:        sha256.New,
 		hashStrategyName:    "sha256",
 		defaultHashStrategy: true,
+		sort:                false,
 		contents: []Content{
 			TestSHA256Content{
 				x: "123",
@@ -211,6 +217,7 @@ var table = []struct {
 		hashStrategy:        md5.New,
 		hashStrategyName:    "md5",
 		defaultHashStrategy: false,
+		sort:                false,
 		contents: []Content{
 			TestMD5Content{
 				x: "Hello",
@@ -233,6 +240,7 @@ var table = []struct {
 		hashStrategy:        md5.New,
 		hashStrategyName:    "md5",
 		defaultHashStrategy: false,
+		sort:                false,
 		contents: []Content{
 			TestMD5Content{
 				x: "Hello",
@@ -252,6 +260,7 @@ var table = []struct {
 		hashStrategy:        md5.New,
 		hashStrategyName:    "md5",
 		defaultHashStrategy: false,
+		sort:                false,
 		contents: []Content{
 			TestMD5Content{
 				x: "Hello",
@@ -277,6 +286,7 @@ var table = []struct {
 		hashStrategy:        md5.New,
 		hashStrategyName:    "md5",
 		defaultHashStrategy: false,
+		sort:                false,
 		contents: []Content{
 			TestMD5Content{
 				x: "123",
@@ -311,6 +321,7 @@ var table = []struct {
 		hashStrategy:        md5.New,
 		hashStrategyName:    "md5",
 		defaultHashStrategy: false,
+		sort:                false,
 		contents: []Content{
 			TestMD5Content{
 				x: "123",
@@ -343,6 +354,44 @@ var table = []struct {
 		notInContents: TestMD5Content{x: "NotInTestTable"},
 		expectedHash:  []byte{158, 85, 181, 191, 25, 250, 251, 71, 215, 22, 68, 68, 11, 198, 244, 148},
 	},
+	{
+		testCaseId:          10,
+		hashStrategy:        md5.New,
+		hashStrategyName:    "md5",
+		defaultHashStrategy: false,
+		sort:                true,
+		contents: []Content{
+			TestMD5Content{
+				x: "123",
+			},
+			TestMD5Content{
+				x: "234",
+			},
+			TestMD5Content{
+				x: "345",
+			},
+			TestMD5Content{
+				x: "456",
+			},
+			TestMD5Content{
+				x: "1123",
+			},
+			TestMD5Content{
+				x: "2234",
+			},
+			TestMD5Content{
+				x: "3345",
+			},
+			TestMD5Content{
+				x: "4456",
+			},
+			TestMD5Content{
+				x: "5567",
+			},
+		},
+		notInContents: TestMD5Content{x: "NotInTestTable"},
+		expectedHash:  []byte{22, 110, 37, 8, 31, 141, 31, 96, 181, 30, 77, 25, 39, 224, 220, 180},
+	},
 }
 
 func TestNewTree(t *testing.T) {
@@ -362,6 +411,9 @@ func TestNewTree(t *testing.T) {
 
 func TestNewTreeWithHashingStrategy(t *testing.T) {
 	for i := 0; i < len(table); i++ {
+		if table[i].sort { // avoid testing the sorted version
+			continue
+		}
 		tree, err := NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		if err != nil {
 			t.Errorf("[case:%d] error: unexpected error: %v", table[i].testCaseId, err)
@@ -378,6 +430,8 @@ func TestMerkleTree_MerkleRoot(t *testing.T) {
 		var err error
 		if table[i].defaultHashStrategy {
 			tree, err = NewTree(table[i].contents)
+		} else if table[i].sort {
+			tree, err = NewTreeWithHashStrategySorted(table[i].contents, table[i].hashStrategy, true)
 		} else {
 			tree, err = NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		}
@@ -396,6 +450,8 @@ func TestMerkleTree_RebuildTree(t *testing.T) {
 		var err error
 		if table[i].defaultHashStrategy {
 			tree, err = NewTree(table[i].contents)
+		} else if table[i].sort {
+			tree, err = NewTreeWithHashStrategySorted(table[i].contents, table[i].hashStrategy, true)
 		} else {
 			tree, err = NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		}
@@ -421,6 +477,8 @@ func TestMerkleTree_RebuildTreeWith(t *testing.T) {
 		var err error
 		if table[i].defaultHashStrategy {
 			tree, err = NewTree(table[i].contents)
+		} else if table[i].sort || table[i+1].sort { // avoid testing the sorted version
+			continue
 		} else {
 			tree, err = NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		}
@@ -443,6 +501,8 @@ func TestMerkleTree_VerifyTree(t *testing.T) {
 		var err error
 		if table[i].defaultHashStrategy {
 			tree, err = NewTree(table[i].contents)
+		} else if table[i].sort {
+			tree, err = NewTreeWithHashStrategySorted(table[i].contents, table[i].hashStrategy, true)
 		} else {
 			tree, err = NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		}
@@ -474,6 +534,8 @@ func TestMerkleTree_VerifyContent(t *testing.T) {
 		var err error
 		if table[i].defaultHashStrategy {
 			tree, err = NewTree(table[i].contents)
+		} else if table[i].sort {
+			tree, err = NewTreeWithHashStrategySorted(table[i].contents, table[i].hashStrategy, true)
 		} else {
 			tree, err = NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		}
@@ -537,6 +599,8 @@ func TestMerkleTree_String(t *testing.T) {
 		var err error
 		if table[i].defaultHashStrategy {
 			tree, err = NewTree(table[i].contents)
+		} else if table[i].sort {
+			tree, err = NewTreeWithHashStrategySorted(table[i].contents, table[i].hashStrategy, true)
 		} else {
 			tree, err = NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		}
@@ -555,6 +619,8 @@ func TestMerkleTree_MerklePath(t *testing.T) {
 		var err error
 		if table[i].defaultHashStrategy {
 			tree, err = NewTree(table[i].contents)
+		} else if table[i].sort {
+			tree, err = NewTreeWithHashStrategySorted(table[i].contents, table[i].hashStrategy, true)
 		} else {
 			tree, err = NewTreeWithHashStrategy(table[i].contents, table[i].hashStrategy)
 		}
@@ -564,13 +630,16 @@ func TestMerkleTree_MerklePath(t *testing.T) {
 		for j := 0; j < len(table[i].contents); j++ {
 			merklePath, index, _ := tree.GetMerklePath(table[i].contents[j])
 
-			hash, err := tree.Leafs[j].calculateNodeHash()
+			hash, err := tree.Leafs[j].calculateNodeHash(false)
 			if err != nil {
 				t.Errorf("[case:%d] error: calculateNodeHash error: %v", table[i].testCaseId, err)
 			}
 			h := sha256.New()
 			for k := 0; k < len(merklePath); k++ {
-				if index[k] == 1 {
+
+				if table[i].sort {
+					hash = sortAppend(true, hash, merklePath[k])
+				} else if index[k] == 1 {
 					hash = append(hash, merklePath[k]...)
 				} else {
 					hash = append(merklePath[k], hash...)

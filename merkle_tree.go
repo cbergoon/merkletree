@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"math/big"
 )
 
 //Content represents the data that is stored and verified by the tree. A type that
@@ -25,6 +26,7 @@ type MerkleTree struct {
 	merkleRoot   []byte
 	Leafs        []*Node
 	hashStrategy func() hash.Hash
+	sort         bool
 }
 
 //Node represents a node, root, or leaf in the tree. It stores pointers to its immediate
@@ -38,26 +40,42 @@ type Node struct {
 	dup    bool
 	Hash   []byte
 	C      Content
+	sort   bool
+}
+
+// sortAppend sort and append the nodes to be compatible with OpenZepplin libraries
+// https://github.com/OpenZeppelin/openzeppelin-contracts-ethereum-package/blob/master/contracts/cryptography/MerkleProof.sol
+func sortAppend(sort bool, a, b []byte) []byte {
+	if !sort {
+		return append(a, b...)
+	}
+	var aBig, bBig big.Int
+	aBig.SetBytes(a)
+	bBig.SetBytes(b)
+	if aBig.Cmp(&bBig) == -1 {
+		return append(a, b...)
+	}
+	return append(b, a...)
 }
 
 //verifyNode walks down the tree until hitting a leaf, calculating the hash at each level
 //and returning the resulting hash of Node n.
-func (n *Node) verifyNode() ([]byte, error) {
+func (n *Node) verifyNode(sort bool) ([]byte, error) {
 	if n.leaf {
 		return n.C.CalculateHash()
 	}
-	rightBytes, err := n.Right.verifyNode()
+	rightBytes, err := n.Right.verifyNode(sort)
 	if err != nil {
 		return nil, err
 	}
 
-	leftBytes, err := n.Left.verifyNode()
+	leftBytes, err := n.Left.verifyNode(sort)
 	if err != nil {
 		return nil, err
 	}
 
 	h := n.Tree.hashStrategy()
-	if _, err := h.Write(append(leftBytes, rightBytes...)); err != nil {
+	if _, err := h.Write(sortAppend(sort, leftBytes, rightBytes)); err != nil {
 		return nil, err
 	}
 
@@ -65,13 +83,13 @@ func (n *Node) verifyNode() ([]byte, error) {
 }
 
 //calculateNodeHash is a helper function that calculates the hash of the node.
-func (n *Node) calculateNodeHash() ([]byte, error) {
+func (n *Node) calculateNodeHash(sort bool) ([]byte, error) {
 	if n.leaf {
 		return n.C.CalculateHash()
 	}
 
 	h := n.Tree.hashStrategy()
-	if _, err := h.Write(append(n.Left.Hash, n.Right.Hash...)); err != nil {
+	if _, err := h.Write(sortAppend(sort, n.Left.Hash, n.Right.Hash)); err != nil {
 		return nil, err
 	}
 
@@ -83,6 +101,7 @@ func NewTree(cs []Content) (*MerkleTree, error) {
 	var defaultHashStrategy = sha256.New
 	t := &MerkleTree{
 		hashStrategy: defaultHashStrategy,
+		sort:         false,
 	}
 	root, leafs, err := buildWithContent(cs, t)
 	if err != nil {
@@ -100,6 +119,25 @@ func NewTree(cs []Content) (*MerkleTree, error) {
 func NewTreeWithHashStrategy(cs []Content, hashStrategy func() hash.Hash) (*MerkleTree, error) {
 	t := &MerkleTree{
 		hashStrategy: hashStrategy,
+		sort:         false,
+	}
+	root, leafs, err := buildWithContent(cs, t)
+	if err != nil {
+		return nil, err
+	}
+	t.Root = root
+	t.Leafs = leafs
+	t.merkleRoot = root.Hash
+	return t, nil
+}
+
+//NewTreeWithHashStrategySorted just like NewTreeWithHashStrategy
+// but sorts the siblings before hashing, mostly to follow the OpenZepplin Merkle implementation
+// https://github.com/OpenZeppelin/openzeppelin-contracts-ethereum-package/blob/master/contracts/cryptography/MerkleProof.sol
+func NewTreeWithHashStrategySorted(cs []Content, hashStrategy func() hash.Hash, sort bool) (*MerkleTree, error) {
+	t := &MerkleTree{
+		hashStrategy: hashStrategy,
+		sort:         sort,
 	}
 	root, leafs, err := buildWithContent(cs, t)
 	if err != nil {
@@ -189,7 +227,7 @@ func buildIntermediate(nl []*Node, t *MerkleTree) (*Node, error) {
 		if i+1 == len(nl) {
 			right = i
 		}
-		chash := append(nl[left].Hash, nl[right].Hash...)
+		chash := sortAppend(t.sort, nl[left].Hash, nl[right].Hash)
 		if _, err := h.Write(chash); err != nil {
 			return nil, err
 		}
@@ -248,7 +286,7 @@ func (m *MerkleTree) RebuildTreeWith(cs []Content) error {
 //VerifyTree verify tree validates the hashes at each level of the tree and returns true if the
 //resulting hash at the root of the tree matches the resulting root hash; returns false otherwise.
 func (m *MerkleTree) VerifyTree() (bool, error) {
-	calculatedMerkleRoot, err := m.Root.verifyNode()
+	calculatedMerkleRoot, err := m.Root.verifyNode(m.sort)
 	if err != nil {
 		return false, err
 	}
@@ -273,17 +311,17 @@ func (m *MerkleTree) VerifyContent(content Content) (bool, error) {
 			currentParent := l.Parent
 			for currentParent != nil {
 				h := m.hashStrategy()
-				rightBytes, err := currentParent.Right.calculateNodeHash()
+				rightBytes, err := currentParent.Right.calculateNodeHash(m.sort)
 				if err != nil {
 					return false, err
 				}
 
-				leftBytes, err := currentParent.Left.calculateNodeHash()
+				leftBytes, err := currentParent.Left.calculateNodeHash(m.sort)
 				if err != nil {
 					return false, err
 				}
 
-				if _, err := h.Write(append(leftBytes, rightBytes...)); err != nil {
+				if _, err := h.Write(sortAppend(m.sort, leftBytes, rightBytes)); err != nil {
 					return false, err
 				}
 				if bytes.Compare(h.Sum(nil), currentParent.Hash) != 0 {
