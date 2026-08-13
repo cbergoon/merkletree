@@ -241,6 +241,77 @@ func TestRebuildTreeDoesNotPromotePadding(t *testing.T) {
 	}
 }
 
+// TestOddNodeCountDuplicatesLastNode pins the Bitcoin-style handling of levels
+// holding an odd number of nodes: the last node is duplicated and paired with
+// itself. This is intentional, and it means a tree built from an odd number of
+// leaves produces the same root as a tree that includes the duplicate explicitly.
+// The property is inherent to the Bitcoin construction (CVE-2012-2459) and is
+// documented in the README. This test exists so that changing it has to be a
+// deliberate decision rather than an accident, since doing so would alter every
+// root this library has ever produced.
+func TestOddNodeCountDuplicatesLastNode(t *testing.T) {
+	equivalent := []struct {
+		implicit []string
+		explicit []string
+	}{
+		{[]string{"A"}, []string{"A", "A"}},
+		{[]string{"A", "B", "C"}, []string{"A", "B", "C", "C"}},
+		{[]string{"A", "B", "C", "D", "E"}, []string{"A", "B", "C", "D", "E", "E"}},
+		// Duplication at an interior level, not just among the leaves.
+		{[]string{"A", "B", "C", "D", "E", "F"}, []string{"A", "B", "C", "D", "E", "F", "E", "F"}},
+	}
+
+	for i, pair := range equivalent {
+		implicit, err := NewTree(sha256Contents(pair.implicit))
+		if err != nil {
+			t.Fatalf("[case:%d] error: unexpected error: %v", i, err)
+		}
+		explicit, err := NewTree(sha256Contents(pair.explicit))
+		if err != nil {
+			t.Fatalf("[case:%d] error: unexpected error: %v", i, err)
+		}
+
+		if !bytes.Equal(implicit.MerkleRoot(), explicit.MerkleRoot()) {
+			t.Errorf("[case:%d] error: expected %v and %v to share a root, got %v and %v",
+				i, pair.implicit, pair.explicit, implicit.MerkleRoot(), explicit.MerkleRoot())
+		}
+
+		// When the duplication happens among the leaves, the padded tree ends up
+		// with the same leaf count as the explicit one. When it happens at an
+		// interior level the leaf counts differ by design, so only check the
+		// leaf-level case.
+		if len(pair.explicit) == len(pair.implicit)+1 {
+			if len(implicit.Leafs) != len(explicit.Leafs) {
+				t.Errorf("[case:%d] error: expected equal leaf counts, got %d and %d",
+					i, len(implicit.Leafs), len(explicit.Leafs))
+			}
+		}
+
+		// The padding copy is present in Leafs and flagged, so callers that need
+		// to tell the two apart still can.
+		if len(pair.implicit)%2 == 1 {
+			dups := 0
+			for _, l := range implicit.Leafs {
+				if l.dup {
+					dups++
+				}
+			}
+			if dups != 1 {
+				t.Errorf("[case:%d] error: expected exactly one leaf flagged as padding, got %d", i, dups)
+			}
+		}
+	}
+}
+
+func sha256Contents(xs []string) []Content {
+	var cs []Content
+	for _, x := range xs {
+		cs = append(cs, TestSHA256Content{x: x})
+	}
+
+	return cs
+}
+
 // TestSortAppendDoesNotAliasInput ensures sortAppend returns a fresh slice
 // rather than appending into the spare capacity of its arguments. Content
 // implementations may legally return a hash slice with cap > len from

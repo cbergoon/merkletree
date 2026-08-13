@@ -1,9 +1,8 @@
 <h1 align="center">Merkle Tree in Golang</h1>
 <p align="center">
 <a href="https://github.com/cbergoon/merkletree/actions/workflows/ci.yml"><img src="https://github.com/cbergoon/merkletree/actions/workflows/ci.yml/badge.svg" alt="Build"></a>
-<a href="https://goreportcard.com/report/github.com/cbergoon/merkletree"><img src="https://goreportcard.com/badge/github.com/cbergoon/merkletree?1=1" alt="Report"></a>
 <a href="https://pkg.go.dev/github.com/cbergoon/merkletree"><img src="https://pkg.go.dev/badge/github.com/cbergoon/merkletree.svg" alt="Docs"></a>
-<a href="#"><img src="https://img.shields.io/badge/version-0.2.0-brightgreen.svg" alt="Version"></a>
+<a href="#"><img src="https://img.shields.io/badge/version-0.3.0-brightgreen.svg" alt="Version"></a>
 </p>
 
 An implementation of a Merkle Tree written in Go. A Merkle Tree is a hash tree that provides an efficient way to verify
@@ -18,7 +17,29 @@ nlog2(n) steps in the worst case.
 
 #### Documentation 
 
-See the docs [here](https://godoc.org/github.com/cbergoon/merkletree).
+See the docs [here](https://pkg.go.dev/github.com/cbergoon/merkletree).
+
+#### Odd Node Counts
+
+When a level of the tree holds an odd number of nodes the last node is duplicated and
+paired with itself. This is how Bitcoin builds its Merkle trees, and this library follows
+that construction deliberately so the roots it produces line up with Bitcoin-style trees.
+
+One consequence is worth knowing about. Because the duplication happens implicitly, a tree
+built from an odd number of leaves produces the same root as a tree that includes the
+duplicate explicitly:
+
+```
+[A, B, C]  and  [A, B, C, C]  ->  same root
+[A]        and  [A, A]        ->  same root
+```
+
+The root therefore commits to the leaves for a known, fixed leaf count, rather than
+uniquely committing to an arbitrary leaf sequence. This is inherent to the Bitcoin
+construction and is catalogued as CVE-2012-2459. If your application needs a root that
+uniquely identifies the leaf sequence on its own, either commit to the leaf count
+alongside the root, or use a construction with explicit leaf and interior node domain
+separation such as [RFC 6962](https://datatracker.ietf.org/doc/html/rfc6962#section-2.1).
 
 #### Install
 ```

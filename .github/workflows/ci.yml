@@ -19,10 +19,12 @@ jobs:
         # Oldest supported version (the go directive in go.mod) through current.
         go: ['1.21', '1.22', '1.23', '1.24', 'stable']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
+          # No third-party dependencies, so there is no go.sum to key a cache on.
+          cache: false
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
@@ -31,10 +33,11 @@ jobs:
     name: gofmt + vet
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: 'stable'
+          cache: false
       - name: gofmt
         run: |
           unformatted=$(gofmt -s -l .)
