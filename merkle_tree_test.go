@@ -11,12 +11,12 @@ import (
 	"testing"
 )
 
-//TestSHA256Content implements the Content interface provided by merkletree and represents the content stored in the tree.
+// TestSHA256Content implements the Content interface provided by merkletree and represents the content stored in the tree.
 type TestSHA256Content struct {
 	x string
 }
 
-//CalculateHash hashes the values of a TestSHA256Content
+// CalculateHash hashes the values of a TestSHA256Content
 func (t TestSHA256Content) CalculateHash() ([]byte, error) {
 	h := sha256.New()
 	if _, err := h.Write([]byte(t.x)); err != nil {
@@ -26,17 +26,17 @@ func (t TestSHA256Content) CalculateHash() ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-//Equals tests for equality of two Contents
+// Equals tests for equality of two Contents
 func (t TestSHA256Content) Equals(other Content) (bool, error) {
 	return t.x == other.(TestSHA256Content).x, nil
 }
 
-//TestContent implements the Content interface provided by merkletree and represents the content stored in the tree.
+// TestContent implements the Content interface provided by merkletree and represents the content stored in the tree.
 type TestMD5Content struct {
 	x string
 }
 
-//CalculateHash hashes the values of a TestContent
+// CalculateHash hashes the values of a TestContent
 func (t TestMD5Content) CalculateHash() ([]byte, error) {
 	h := md5.New()
 	if _, err := h.Write([]byte(t.x)); err != nil {
@@ -46,7 +46,7 @@ func (t TestMD5Content) CalculateHash() ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-//Equals tests for equality of two Contents
+// Equals tests for equality of two Contents
 func (t TestMD5Content) Equals(other Content) (bool, error) {
 	return t.x == other.(TestMD5Content).x, nil
 }

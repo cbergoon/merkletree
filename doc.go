@@ -1,7 +1,8 @@
 // Copyright 2017 Cameron Bergoon
 // Licensed under the MIT License, see LICENCE file for details.
 
-/*Package merkletree implements a Merkle Tree capable of storing arbitrary content.
+/*
+Package merkletree implements a Merkle Tree capable of storing arbitrary content.
 
 A Merkle Tree is a hash tree that provides an efficient way to verify the contents
 of a set data are present and untampered with. At its core, a Merkle Tree is
@@ -17,14 +18,15 @@ Creating a new merkletree requires that the type that the tree will be construct
 from implements the Content interface.
 
 	type Content interface {
-		CalculateHash() []byte
-		Equals(other Content) bool
+		CalculateHash() ([]byte, error)
+		Equals(other Content) (bool, error)
 	}
 
 A slice of the Content items should be created and then passed to the NewTree method.
 
-	t, err := merkle.NewTree(list)
+	t, err := merkletree.NewTree(list)
 
 t represents the Merkle Tree and can be verified and manipulated with the API methods
-described below.*/
+described below.
+*/
 package merkletree

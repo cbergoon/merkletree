@@ -1,9 +1,9 @@
 <h1 align="center">Merkle Tree in Golang</h1>
 <p align="center">
-<a href="https://travis-ci.org/cbergoon/merkletree"><img src="https://travis-ci.org/cbergoon/merkletree.svg?branch=master" alt="Build"></a>
+<a href="https://github.com/cbergoon/merkletree/actions/workflows/ci.yml"><img src="https://github.com/cbergoon/merkletree/actions/workflows/ci.yml/badge.svg" alt="Build"></a>
 <a href="https://goreportcard.com/report/github.com/cbergoon/merkletree"><img src="https://goreportcard.com/badge/github.com/cbergoon/merkletree?1=1" alt="Report"></a>
-<a href="https://godoc.org/github.com/cbergoon/merkletree"><img src="https://img.shields.io/badge/godoc-reference-brightgreen.svg" alt="Docs"></a>
-<a href="#"><img src="https://img.shields.io/badge/version-0.1.0-brightgreen.svg" alt="Version"></a>
+<a href="https://pkg.go.dev/github.com/cbergoon/merkletree"><img src="https://pkg.go.dev/badge/github.com/cbergoon/merkletree.svg" alt="Docs"></a>
+<a href="#"><img src="https://img.shields.io/badge/version-0.2.0-brightgreen.svg" alt="Version"></a>
 </p>
 
 An implementation of a Merkle Tree written in Go. A Merkle Tree is a hash tree that provides an efficient way to verify
@@ -58,7 +58,7 @@ func (t TestContent) Equals(other merkletree.Content) (bool, error) {
   otherTC, ok := other.(TestContent)
   if !ok {
     return false, errors.New("value is not of type TestContent")
-  }    
+  }
   return t.x == otherTC.x, nil
 }
 
