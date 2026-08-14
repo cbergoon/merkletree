@@ -19,27 +19,112 @@ nlog2(n) steps in the worst case.
 
 See the docs [here](https://pkg.go.dev/github.com/cbergoon/merkletree).
 
-#### Odd Node Counts
+#### Constructions
 
-When a level of the tree holds an odd number of nodes the last node is duplicated and
-paired with itself. This is how Bitcoin builds its Merkle trees, and this library follows
-that construction deliberately so the roots it produces line up with Bitcoin-style trees.
+The tree can be built three ways. All of them are supported; they produce different roots
+and are not interchangeable, so pick one when the tree is created.
 
-One consequence is worth knowing about. Because the duplication happens implicitly, a tree
-built from an odd number of leaves produces the same root as a tree that includes the
-duplicate explicitly:
+| Construction | Built with | Notes |
+| --- | --- | --- |
+| Bitcoin-style (default) | `NewTree`, `NewTreeWithHashStrategy` | Pairs siblings in order, duplicates the last node on an odd count |
+| Sorted siblings | `NewTreeWithHashStrategySorted`, `WithSortedSiblings()` | Orders each pair before hashing, matching OpenZeppelin `MerkleProof` |
+| RFC 6962 | `WithRFC6962()` | Prefixed leaf and interior hashes, splits instead of padding |
+
+The default follows Bitcoin deliberately, so the roots line up with Bitcoin-style trees.
+That construction carries two well-known properties:
+
+**Duplicated odd nodes.** A level holding an odd number of nodes duplicates its last node
+so it can be paired, which means a tree built from an odd number of leaves has the same
+root as a tree that spells the duplicate out — this is CVE-2012-2459:
 
 ```
 [A, B, C]  and  [A, B, C, C]  ->  same root
 [A]        and  [A, A]        ->  same root
 ```
 
-The root therefore commits to the leaves for a known, fixed leaf count, rather than
-uniquely committing to an arbitrary leaf sequence. This is inherent to the Bitcoin
-construction and is catalogued as CVE-2012-2459. If your application needs a root that
-uniquely identifies the leaf sequence on its own, either commit to the leaf count
-alongside the root, or use a construction with explicit leaf and interior node domain
-separation such as [RFC 6962](https://datatracker.ietf.org/doc/html/rfc6962#section-2.1).
+**No separation between leaf and interior hashes.** Both are computed the same way, so an
+interior digest can be handed back as a leaf. A two-leaf tree whose leaves are the two
+subtree hashes of a four-leaf tree reproduces the original root exactly, and the forged
+tree verifies against itself.
+
+Sorted mode shares both, and additionally discards leaf order: `[A B C D]`, `[B A C D]`
+and `[D C B A]` all produce the same root, because each pair is ordered before it is
+hashed. Only regrouping which leaves are paired changes the root. Check
+`tree.Sorted()` if you depend on the root committing to order.
+
+##### RFC 6962
+
+`WithRFC6962()` builds the tree specified by
+[RFC 6962 section 2.1](https://datatracker.ietf.org/doc/html/rfc6962#section-2.1), which
+closes both of the above:
+
+```go
+tree, err := merkletree.NewTreeWithOptions(list, merkletree.WithRFC6962())
+```
+
+Leaf hashes are computed as `H(0x00 ‖ digest)` and interior hashes as `H(0x01 ‖ left ‖ right)`,
+so a forged leaf would need a genuine collision between two differently prefixed inputs
+rather than a rearrangement. Odd node counts are split at the largest power of two below
+their length instead of being padded, so every distinct leaf sequence gets a distinct
+root and `[A, B, C]` no longer collides with `[A, B, C, C]`.
+
+Two things to know. RFC 6962 hashes raw leaf data, whereas this tree hashes whatever
+`CalculateHash` returns — roots match a Certificate Transparency log only if your
+`CalculateHash` returns the leaf bytes themselves rather than a digest of them. The
+structural guarantees hold either way. And a single-leaf tree is its own root, so its
+audit path is legitimately empty.
+
+`WithRFC6962()` cannot be combined with `WithSortedSiblings()`; RFC 6962 specifies its own
+sibling ordering, and asking for both returns an error.
+
+#### Serialization
+
+A tree can be written out and read back. What gets written is not the node graph but the
+content the tree is rebuilt from: the ordered leaf content, the name of the hash strategy,
+the sibling sort flag, and the Merkle root. Everything else is derived, and the recorded
+root makes decoding self-checking — a payload that has been altered, or that is decoded
+with the wrong hash strategy, fails rather than producing a tree that quietly verifies
+against nothing.
+
+Register your content type and the standard codecs work directly:
+
+```go
+merkletree.RegisterContent(TestContent{}) // needs MarshalBinary/UnmarshalBinary
+
+err := gob.NewEncoder(&buf).Encode(tree)
+
+var decoded merkletree.MerkleTree
+err = gob.NewDecoder(&buf).Decode(&decoded)
+```
+
+`MarshalBinary`, `UnmarshalBinary`, `MarshalJSON`, and `UnmarshalJSON` are all available,
+so anything built on `encoding.BinaryMarshaler` or `json.Marshaler` works too.
+
+To avoid the package-level registry entirely — in a library, or for content that already
+has an encoding of its own — supply the content codec directly:
+
+```go
+data, err := tree.MarshalWith(func(c merkletree.Content) ([]byte, error) {
+  return []byte(c.(TestContent).x), nil
+})
+
+decoded, err := merkletree.UnmarshalWith(data, func(b []byte) (merkletree.Content, error) {
+  return TestContent{x: string(b)}, nil
+})
+```
+
+Hash strategies are recorded by name, since a function cannot be serialized. Everything in
+the standard library is registered for you; anything else is one call:
+
+```go
+merkletree.RegisterHashStrategy("keccak256", sha3.NewLegacyKeccak256)
+tree, err := merkletree.NewTreeWithHashStrategy(list, sha3.NewLegacyKeccak256)
+```
+
+Note that a tree with reference cycles cannot be handed to a reflection-based codec
+directly — `Node` points back at its `Tree` and its `Parent`. Before these marshalers
+existed, `gob.Encode(tree)` did not return an error, it crashed the process with a stack
+overflow. The marshalers above are the supported path.
 
 #### Install
 ```

@@ -249,6 +249,10 @@ func TestRebuildTreeDoesNotPromotePadding(t *testing.T) {
 // documented in the README. This test exists so that changing it has to be a
 // deliberate decision rather than an accident, since doing so would alter every
 // root this library has ever produced.
+//
+// Callers who need a root that commits to the leaf count should build with
+// WithRFC6962, which splits odd node counts instead of padding them; see
+// TestPropertyRFC6962CommitsToLeafCount for the same pairs no longer colliding.
 func TestOddNodeCountDuplicatesLastNode(t *testing.T) {
 	equivalent := []struct {
 		implicit []string
