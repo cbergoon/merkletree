@@ -29,6 +29,142 @@ jobs:
       - run: go vet ./...
       - run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          cache: false
+      # A normal `go test` run only replays each target's seed corpus. This job
+      # actually fuzzes. It is the only fuzzing that happens, so a change which
+      # breaks a decoder fails the pull request that introduced it.
+      - name: locate the fuzz corpus cache
+        id: corpus
+        run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
+      # Go keeps inputs that reached new coverage in GOCACHE/fuzz. Carrying that
+      # between runs is what turns a series of short jobs into cumulative progress
+      # rather than the same first minute of exploration over and over. The key is
+      # unique per run so each job saves a fresh entry, and restore-keys picks up
+      # the most recent one.
+      - name: restore the fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      # Pull requests get the short budget so review stays fast. A merge to master
+      # is rarer and nobody is waiting on it, so it searches harder and feeds what
+      # it finds back into the shared corpus above.
+      - name: fuzz
+        env:
+          FUZZTIME: ${{ github.event_name == 'pull_request' && '60s' || '180s' }}
+        run: scripts/fuzz.sh
+      # A failing input is written to testdata/fuzz/<Target>/. Upload it so the
+      # exact bytes can be committed, which turns the finding into a permanent
+      # regression test that runs on every `go test` from then on.
+      - name: upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures
+          path: testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  bench:
+    name: benchmarks (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          cache: false
+      # One iteration each. CI runners are too noisy for the timings to mean
+      # anything, so this only checks that every benchmark still compiles, runs,
+      # and passes its own assertions - benchmarks rot silently otherwise, and are
+      # discovered to be broken exactly when someone needs them.
+      - run: scripts/bench.sh -s
+      # The parallel benchmarks again, this time under the race detector. That is a
+      # separate question from whether they run: some concurrent code paths are
+      # exercised only by benchmarks, and `go test -race` in the test job cannot see
+      # them because it does not run benchmarks at all, so a race in one is invisible
+      # to every other job here.
+      #
+      # Two details this depends on, both learned by planting a known race and
+      # checking it was caught. It has to be the parallel benchmarks: a single
+      # goroutine benchmark cannot race, and including the rest costs minutes under
+      # -race for no coverage. And it needs real iterations - at the smoke default of
+      # one, the goroutines barely overlap and the detector sees nothing. Twenty was
+      # enough to catch the planted race and two hundred catches it every time, which
+      # matters because race detection is probabilistic rather than exhaustive.
+      - run: COUNT=1 BENCHTIME=200x scripts/bench.sh -r Parallel
+
+  oracle:
+    name: rfc 6962 oracle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          cache: true
+          cache-dependency-path: oracle/go.sum
+      # The oracle lives in its own module so that checking against a third-party
+      # RFC 6962 implementation costs merkletree no dependencies. That also means the
+      # root `go test ./...` above cannot see it: a nested module is excluded from the
+      # parent's package list. Without this job the oracle would never run, which is
+      # the same as not having it.
+      - name: cross-check against transparency-dev/merkle
+        working-directory: oracle
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
+  compare:
+    name: library comparison
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          cache: true
+          cache-dependency-path: benchmarks/go.sum
+      # The comparison lives in its own module so that benchmarking against five other
+      # Merkle tree libraries costs merkletree no dependencies, which also means the
+      # root `go test ./...` cannot see it. Its tests are not benchmarks: they assert
+      # which implementations agree on a root and which do not, and that is the only
+      # external check the default construction has, since it has no specification to
+      # be validated against.
+      #
+      # This is the one job here that can fail for reasons outside this repository.
+      # Everything is version pinned through benchmarks/go.sum, so a dependency cannot
+      # change underneath it, but the module proxy can be unreachable and one of the
+      # five is unmaintained. If that becomes noisy, this job is the one to make
+      # non-blocking - not the oracle, which depends only on a pinned reference
+      # implementation and gates real correctness.
+      - name: cross-implementation checks
+        working-directory: benchmarks
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+      # One iteration of everything, to catch a benchmark that no longer compiles or
+      # has started failing its own assertions.
+      - name: benchmarks compile and run
+        working-directory: benchmarks
+        run: go test -run='^$' -bench=. -benchtime=1x ./...
+      # Then the concurrent ones under the race detector, with enough iterations for
+      # the goroutines to actually overlap. See the bench job for why both the
+      # pattern and the iteration count matter.
+      - name: concurrent benchmarks under the race detector
+        working-directory: benchmarks
+        run: go test -race -run='^$' -bench=Concurrent -benchtime=200x ./...
+
   lint:
     name: gofmt + vet
     runs-on: ubuntu-latest

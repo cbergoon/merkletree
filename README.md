@@ -77,6 +77,73 @@ audit path is legitimately empty.
 `WithRFC6962()` cannot be combined with `WithSortedSiblings()`; RFC 6962 specifies its own
 sibling ordering, and asking for both returns an error.
 
+#### Parallel construction
+
+`WithParallelism(n)` builds the tree across up to `n` goroutines, or GOMAXPROCS of them
+when `n < 1`. It is off by default.
+
+```go
+tree, err := merkletree.NewTreeWithOptions(list, merkletree.WithParallelism(0))
+```
+
+**`Content.CalculateHash` is called concurrently when this is set**, and your
+implementation must be safe for that. Nothing else in the package calls it concurrently
+and the tree cannot check whether yours is safe, so this requirement is the entire cost
+of the option and the reason it is not the default.
+
+The root is unaffected — every hash lands in a slot fixed by its position, so a tree
+built in parallel is byte for byte the tree built serially.
+
+Whether it pays depends almost entirely on what `CalculateHash` costs. Measured on an
+M5 Max, best of 3:
+
+| Content | Leaves | Serial | Parallel | |
+| --- | --- | --- | --- | --- |
+| short string | 256 | 26.5µs | 43.7µs | **0.61×** — slower |
+| short string | 4,096 | 476µs | 333µs | 1.43× |
+| short string | 65,536 | 6.40ms | 2.14ms | 2.99× |
+| 4KB blob | 4,096 | 5.21ms | 723µs | **7.21×** |
+
+Content hashing is always spread across the goroutine budget, since its cost belongs to
+you and cannot be guessed here — which is why the option wins big on expensive leaves at
+any size, and can lose on a small tree of cheap ones. Interior hashing is our own work
+and known to be small, so it stays serial until the tree is large enough to be worth
+splitting. Measure before adopting it for small trees.
+
+The option covers every construction, including `WithRFC6962`: the unbalanced interior
+an RFC tree builds forks across goroutines the same way, so an RFC build of 65,536 short
+leaves drops from 9.98ms serial to 2.01ms in parallel.
+
+Parallelism is not recorded when a tree is serialized, since it has no bearing on the
+root; a tree read back rebuilds serially unless built again with the option.
+
+#### Serving proofs
+
+`GetMerklePath` locates content by scanning every leaf; build with `WithLeafIndex` to
+make that one hash and a map probe, or address leaves by position with
+`GetMerklePathByIndex`. When proofs are served at rate, the two slices each proof
+returns become the bottleneck — the garbage collector turns into the shared resource
+every goroutine queues on. The `Append` forms generate the same proofs into buffers you
+own, so a server that reuses them allocates nothing per proof:
+
+```go
+var path [][]byte
+var index []int64
+for i := range list {
+  path, index, err = t.AppendMerklePathByIndex(path[:0], index[:0], i)
+  // path holds the sibling hashes, index which side each sits on
+}
+```
+
+The appended hashes are the tree's own, not copies: treat them as read-only, and copy
+any proof that must outlive the next reuse of its buffer.
+
+The difference is not subtle. At 65,536 leaves a proof appends in ~17ns against ~76ns
+returning fresh slices, and under 18 goroutines serving from one shared tree the append
+form runs at 2.9ns per proof — 28× the slice-returning form, because with no allocation
+there is nothing shared left to queue on. The comparison tables below carry the
+cross-library context.
+
 #### Serialization
 
 A tree can be written out and read back. What gets written is not the node graph but the
@@ -125,6 +192,73 @@ Note that a tree with reference cycles cannot be handed to a reflection-based co
 directly — `Node` points back at its `Tree` and its `Parent`. Before these marshalers
 existed, `gob.Encode(tree)` did not return an error, it crashed the process with a stack
 overflow. The marshalers above are the supported path.
+
+#### Comparison
+
+Measured against the other Merkle tree libraries in the Go ecosystem — `txaty/go-merkletree`,
+`wealdtech/go-merkletree`, `onrik/gomerkle`, `xsleonard/go-merkle` and `jvsteiner/merkle` —
+with SHA-256 and the same leaf data throughout. The benchmarks, the methodology and the
+caveats are in [`benchmarks/ANALYSIS.md`](benchmarks/ANALYSIS.md); the numbers below are
+from an Apple M5 Max on Go 1.26, so treat the ratios as the durable part.
+
+`txaty/go-merkletree` gets its own column because it is the closest competitor — the only
+other library here with parallel construction, and the one whose published comparisons
+prompted this exercise. Where it is also the best of the field, the two columns agree.
+
+| | merkletree | txaty | best of the rest | rank |
+|---|---|---|---|---|
+| Construction, serial (65,536 leaves) | 7.67 ms | 9.67 ms | onrik 7.61 ms | 2 / 6 |
+| Construction, parallel (65,536 leaves) | **3.08 ms** | 6.47 ms | txaty 6.47 ms | **1 / 2** |
+| Parallel speedup, 16 KiB leaves | **12.8×** | 11.9× | txaty 11.9× | **1 / 2** |
+| Allocations building 65,536 leaves | 131,140 | 328,230 | onrik 131,090 | 2 / 6 |
+| Memory building 65,536 leaves | 18.4 MB | 24.8 MB | wealdtech 11.5 MB | 4 / 6 |
+| Single proof (65,536 leaves) | **16.7 ns** | 128 ns | txaty 128 ns | **1 / 6** |
+| Full proof set (4,096 leaves) | **25.4 ns/proof** | 158 ns/proof | txaty 158 ns/proof | **1 / 6** |
+| Verify a proof (65,536 leaves) | **934 ns** | 1,212 ns | onrik 1,108 ns | **1 / 4** |
+| Concurrent proofs, 18 goroutines | **2.9 ns/op** | 165 ns/op | jvsteiner 153 ns/op | **1 / 6** |
+| Concurrent scaling, 1 → 18 goroutines | **16.4×** | 1.14× | wealdtech 13.1× | **1 / 6** |
+| Proof size on the wire, depth 16 | 640 B | 516 B | txaty 516 B | 2 / 2 |
+
+The proof rows are `AppendMerklePathByIndex` serving into reused buffers, which
+allocates nothing per proof; the slice-returning `GetMerklePathByIndex` runs at 76 ns
+and the `WithLeafIndex` lookup at 135 ns, still ahead of or level with everything else.
+Without any of the three, locating content is a scan and a full proof set is quadratic.
+Serial construction is a near-tie because every implementation is waiting on SHA-256 —
+at 16 KiB leaves all six land within 3% of each other, and parallelism is the only thing
+that still separates them.
+
+| | merkletree | txaty | wealdtech | onrik | xsleonard | jvsteiner |
+|---|---|---|---|---|---|---|
+| Proof generation | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Proof by leaf position <sup>1</sup> | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Allocation-free proofs <sup>2</sup> | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Verify without the tree <sup>3</sup> | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| Parallel construction | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Pluggable hash | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Sorted siblings (OpenZeppelin) | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| RFC 6962 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Serialization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Runtime dependencies | none | x/sync | x/crypto | none | none | protobuf |
+| Odd leaf count | duplicate <sup>4</sup> | duplicate | pad to 2ⁿ | promote | promote <sup>5</sup> | promote |
+
+<sup>1</sup> Addressing a leaf by position rather than by value, which avoids hashing the
+query. txaty offers this only through the precomputed `Proofs` slice in `ModeProofGen`.
+It matters more than it looks: at 16 KiB leaves, by position is 95× faster than by value.
+<sup>2</sup> `AppendMerklePath` and `AppendMerklePathByIndex` write into slices the
+caller supplies and keeps, so a proof server reusing its buffers generates proofs without
+allocating at all. No other library here exposes the proof buffers; every one of them
+returns freshly allocated structures. It is what makes the concurrency row possible — a
+proof that allocates nothing shares nothing, so it scales with cores instead of
+contending on the garbage collector.
+<sup>3</sup> A package-level verify taking a proof, a root and the data. onrik's is a
+method, so it needs a `Tree` value it does not otherwise use.
+<sup>4</sup> Or split, under `WithRFC6962`. <sup>5</sup> Or duplicate, with `DoubleOddNodes`.
+
+That last row decides interoperability, not speed. These libraries agree on the root for
+any power-of-two leaf count and split into three groups otherwise, so a proof from one
+group will not verify against a root from another. merkletree's default agrees with txaty
+and with xsleonard's `DoubleOddNodes`; its `WithRFC6962` mode is checked against the
+Certificate Transparency reference vectors in [`oracle/`](oracle/).
 
 #### Install
 ```
@@ -209,6 +343,60 @@ func main() {
 #### Sample
 ![merkletree](merkle_tree.png)
 
+
+#### Testing
+
+```bash
+go test -race ./...       # unit, property, golden, and regression tests
+scripts/fuzz.sh           # every fuzz target, 30s each
+scripts/bench.sh          # benchmarks, 6 runs each
+```
+
+The suite checks roots against a reference implementation written directly from each
+construction's definition, and pins golden roots and golden serialized payloads that
+were produced outside this repository. A change to the hashing or the wire format has
+to be made in several independent places before it can pass unnoticed; regenerating a
+golden payload to make a test pass is a compatibility break, not a fix.
+
+##### Fuzzing
+
+A normal test run only replays each target's seed corpus. `scripts/fuzz.sh` does the
+actual fuzzing, one target at a time, discovering targets from the source so a newly
+added `FuzzXxx` is picked up automatically:
+
+```bash
+scripts/fuzz.sh                       # every target, 30s each
+scripts/fuzz.sh FuzzUnmarshalBinary   # just one
+FUZZTIME=5m scripts/fuzz.sh           # longer budget per target
+```
+
+| Target | What it drives |
+| --- | --- |
+| `FuzzTreeInvariants` | Tree construction, verification, and proof replay across every construction |
+| `FuzzUnmarshalBinary` | The binary decoder: no faults, decoded trees verify, payloads are canonical |
+| `FuzzUnmarshalJSON` | The JSON decoder |
+| `FuzzPayloadCorruption` | That an altered payload can never decode to a different Merkle root |
+
+CI fuzzes on every pull request for 60s per target, and on every merge to `master` for
+180s per target. Both share a corpus cached between runs, so the search accumulates
+across builds rather than restarting each time. A failing input is written to
+`testdata/fuzz/<Target>/` and uploaded as a build artifact; committing that file turns
+the finding into a permanent regression test.
+
+##### Benchmarks
+
+`scripts/bench.sh` covers construction, verification, proof generation, rebuilds, and
+all three codecs, across each construction and a range of leaf counts. Timings are
+noisy, so it runs each benchmark six times by default and can hand the results to
+benchstat:
+
+```bash
+scripts/bench.sh                          # everything
+scripts/bench.sh Verify                   # only benchmarks matching /Verify/
+scripts/bench.sh -o before.txt            # save a baseline
+scripts/bench.sh -o after.txt -b before.txt   # ...and compare against it
+scripts/bench.sh -s                       # smoke: one iteration, just checks they run
+```
 
 #### License
 This project is licensed under the MIT License.
