@@ -169,6 +169,65 @@ merkletree.RegisterHashStrategy("keccak256", sha3.NewLegacyKeccak256)
 tree, err := merkletree.NewTreeWithHashStrategy(list, sha3.NewLegacyKeccak256)
 ```
 
+#### Benchmark
+
+Setup:
+
+| Machine | CPU | Memory | OS | Hash Function | Go Version |
+| --- | --- | --- | --- | --- | --- |
+| MacBook Pro | Apple M5 Max, 18 core | 36GB | macOS 26.4 | SHA256 | 1.26.3 |
+
+Benchmark tasks:
+
+1. **Proof generation for all the blocks**: from a cold start, build the tree and come away
+   holding the Merkle root and the proofs of every data block.
+2. **Proof verification**: verify a single proof against a root.
+
+<p align="center">
+<img src="benchmarks/proof-generation.svg" alt="Proof generation for all blocks" width="49%">
+<img src="benchmarks/proof-verification.svg" alt="Proof verification" width="49%">
+</p>
+
+> *Note:* the number of data blocks is 2<sup>depth</sup>, so each step on the x-axis is
+> twice the work of the one before it. The y-axis is logarithmic to fit the full range,
+> which means the real gaps between lines are much larger than they look — one gridline
+> is a doubling.
+
+At depth 18 (262,144 leaves), generating every proof:
+
+| | time | vs. merkletree |
+| --- | --- | --- |
+| **merkletree** (append, parallel) | **22.3 ms** | — |
+| txaty/go-merkletree (parallel) | 43.3 ms | 1.9× |
+| **merkletree** (append) | 44.2 ms | 2.0× |
+| txaty/go-merkletree | 91.0 ms | 4.1× |
+| wealdtech/go-merkletree | 41.2 s | 1,847× |
+| merkletree without either option | 91.4 s | 4,102× |
+
+The last row is the same library with no options set, and it is on the chart on purpose.
+`GetMerklePath` locates content by scanning every leaf, so a full proof set is O(n²) —
+which is what put this library at the top of the earlier published comparisons. Building
+with `WithLeafIndex`, or addressing leaves by position with `GetMerklePathByIndex` and the
+`Append` forms, is the difference between the top line and the bottom one.
+
+Both parallel lines sit *above* their serial counterparts until the tree is large enough
+to pay for the goroutines: merkletree crosses over at depth 10 (1,024 leaves) and txaty at
+depth 11. Below that, parallel construction is a loss for both — 10× worse at depth 1 —
+which is why neither library enables it by default. Leaves here are 64 bytes; the more
+expensive the content, the earlier the crossover (see
+[`benchmarks/ANALYSIS.md`](benchmarks/ANALYSIS.md), which puts it below 256 leaves at 1 KiB
+and below 64 at 16 KiB).
+
+Verification is a like-for-like comparison — a proof replayed against a root with no tree
+involved. At depth 18 merkletree verifies in 1,068 ns against txaty's 1,390 ns and
+wealdtech's 1,356 ns, allocating 2 objects where the others grow with tree depth.
+
+Regenerate both charts and the underlying numbers with:
+
+```bash
+cd benchmarks && go run ./cmd/depthchart
+```
+
 #### Comparison
 
 Measured against the other Merkle tree libraries in the Go ecosystem — `txaty/go-merkletree`,
