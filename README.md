@@ -169,6 +169,67 @@ merkletree.RegisterHashStrategy("keccak256", sha3.NewLegacyKeccak256)
 tree, err := merkletree.NewTreeWithHashStrategy(list, sha3.NewLegacyKeccak256)
 ```
 
+#### Comparison
+
+Measured against the other Merkle tree libraries in the Go ecosystem — `txaty/go-merkletree`,
+`wealdtech/go-merkletree`, `onrik/gomerkle`, `xsleonard/go-merkle` and `jvsteiner/merkle`
+with SHA-256 and the same leaf data throughout. The comparison and analysis are in 
+[`benchmarks/ANALYSIS.md`](benchmarks/ANALYSIS.md); the numbers below are from an Apple M5 Max
+on Go 1.26, so treat the ratios as the durable part. This analysis, benchmarks and the following 
+comparison brief was AI assisted and verified using a reference implementation. 
+
+`txaty/go-merkletree` gets its own column as the closest competitor the only
+other library here with parallel construction, and the one whose published comparisons
+prompted this exercise. 
+
+| | merkletree | txaty | best of the rest | rank |
+|---|---|---|---|---|
+| Construction, serial (65,536 leaves) | 7.67 ms | 9.67 ms | onrik 7.61 ms | 2 / 6 |
+| Construction, parallel (65,536 leaves) | **3.08 ms** | 6.47 ms | txaty 6.47 ms | **1 / 2** |
+| Parallel speedup, 16 KiB leaves | **12.8×** | 11.9× | txaty 11.9× | **1 / 2** |
+| Allocations building 65,536 leaves | 131,140 | 328,230 | onrik 131,090 | 2 / 6 |
+| Memory building 65,536 leaves | 18.4 MB | 24.8 MB | wealdtech 11.5 MB | 4 / 6 |
+| Single proof (65,536 leaves) | **16.7 ns** | 128 ns | txaty 128 ns | **1 / 6** |
+| Full proof set (4,096 leaves) | **25.4 ns/proof** | 158 ns/proof | txaty 158 ns/proof | **1 / 6** |
+| Verify a proof (65,536 leaves) | **934 ns** | 1,212 ns | onrik 1,108 ns | **1 / 4** |
+| Concurrent proofs, 18 goroutines | **2.9 ns/op** | 165 ns/op | jvsteiner 153 ns/op | **1 / 6** |
+| Concurrent scaling, 1 → 18 goroutines | **16.4×** | 1.14× | wealdtech 13.1× | **1 / 6** |
+| Proof size on the wire, depth 16 | 640 B | 516 B | txaty 516 B | 2 / 2 |
+
+
+| | merkletree | txaty | wealdtech | onrik | xsleonard | jvsteiner |
+|---|---|---|---|---|---|---|
+| Proof generation | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Proof by leaf position <sup>1</sup> | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Allocation-free proofs <sup>2</sup> | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Verify without the tree <sup>3</sup> | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| Parallel construction | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Pluggable hash | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Sorted siblings (OpenZeppelin) | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| RFC 6962 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Serialization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Runtime dependencies | none | x/sync | x/crypto | none | none | protobuf |
+| Odd leaf count | duplicate <sup>4</sup> | duplicate | pad to 2ⁿ | promote | promote <sup>5</sup> | promote |
+
+<sup>1</sup> Addressing a leaf by position rather than by value, which avoids hashing the
+query. txaty offers this only through the precomputed `Proofs` slice in `ModeProofGen`.
+It matters more than it looks: at 16 KiB leaves, by position is 95× faster than by value.
+<sup>2</sup> `AppendMerklePath` and `AppendMerklePathByIndex` write into slices the
+caller supplies and keeps, so a proof server reusing its buffers generates proofs without
+allocating at all. No other library here exposes the proof buffers; every one of them
+returns freshly allocated structures. It is what makes the concurrency row possible a
+proof that allocates nothing shares nothing, so it scales with cores instead of
+contending on the garbage collector.
+<sup>3</sup> A package-level verify taking a proof, a root and the data. onrik's is a
+method, so it needs a `Tree` value it does not otherwise use.
+<sup>4</sup> Or split, under `WithRFC6962`. <sup>5</sup> Or duplicate, with `DoubleOddNodes`.
+
+That last row decides interoperability. These libraries agree on the root for
+any power-of-two leaf count and split into three groups otherwise, so a proof from one
+group will not verify against a root from another. merkletree's default agrees with txaty
+and with xsleonard's `DoubleOddNodes`; its `WithRFC6962` mode is checked against the
+Certificate Transparency reference vectors in [`oracle/`](oracle/).
+
 #### Benchmark
 
 Setup:
@@ -228,66 +289,6 @@ Regenerate both charts and the underlying numbers with:
 cd benchmarks && go run ./cmd/depthchart
 ```
 
-#### Comparison
-
-Measured against the other Merkle tree libraries in the Go ecosystem — `txaty/go-merkletree`,
-`wealdtech/go-merkletree`, `onrik/gomerkle`, `xsleonard/go-merkle` and `jvsteiner/merkle`
-with SHA-256 and the same leaf data throughout. The comparison and analysis are in 
-[`benchmarks/ANALYSIS.md`](benchmarks/ANALYSIS.md); the numbers below are from an Apple M5 Max
-on Go 1.26, so treat the ratios as the durable part. This analysis and the following comparison 
-brief was AI assisted and verified using a reference implementation. 
-
-`txaty/go-merkletree` gets its own column as the closest competitor the only
-other library here with parallel construction, and the one whose published comparisons
-prompted this exercise. 
-
-| | merkletree | txaty | best of the rest | rank |
-|---|---|---|---|---|
-| Construction, serial (65,536 leaves) | 7.67 ms | 9.67 ms | onrik 7.61 ms | 2 / 6 |
-| Construction, parallel (65,536 leaves) | **3.08 ms** | 6.47 ms | txaty 6.47 ms | **1 / 2** |
-| Parallel speedup, 16 KiB leaves | **12.8×** | 11.9× | txaty 11.9× | **1 / 2** |
-| Allocations building 65,536 leaves | 131,140 | 328,230 | onrik 131,090 | 2 / 6 |
-| Memory building 65,536 leaves | 18.4 MB | 24.8 MB | wealdtech 11.5 MB | 4 / 6 |
-| Single proof (65,536 leaves) | **16.7 ns** | 128 ns | txaty 128 ns | **1 / 6** |
-| Full proof set (4,096 leaves) | **25.4 ns/proof** | 158 ns/proof | txaty 158 ns/proof | **1 / 6** |
-| Verify a proof (65,536 leaves) | **934 ns** | 1,212 ns | onrik 1,108 ns | **1 / 4** |
-| Concurrent proofs, 18 goroutines | **2.9 ns/op** | 165 ns/op | jvsteiner 153 ns/op | **1 / 6** |
-| Concurrent scaling, 1 → 18 goroutines | **16.4×** | 1.14× | wealdtech 13.1× | **1 / 6** |
-| Proof size on the wire, depth 16 | 640 B | 516 B | txaty 516 B | 2 / 2 |
-
-
-| | merkletree | txaty | wealdtech | onrik | xsleonard | jvsteiner |
-|---|---|---|---|---|---|---|
-| Proof generation | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
-| Proof by leaf position <sup>1</sup> | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
-| Allocation-free proofs <sup>2</sup> | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Verify without the tree <sup>3</sup> | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
-| Parallel construction | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Pluggable hash | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Sorted siblings (OpenZeppelin) | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| RFC 6962 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Serialization | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Runtime dependencies | none | x/sync | x/crypto | none | none | protobuf |
-| Odd leaf count | duplicate <sup>4</sup> | duplicate | pad to 2ⁿ | promote | promote <sup>5</sup> | promote |
-
-<sup>1</sup> Addressing a leaf by position rather than by value, which avoids hashing the
-query. txaty offers this only through the precomputed `Proofs` slice in `ModeProofGen`.
-It matters more than it looks: at 16 KiB leaves, by position is 95× faster than by value.
-<sup>2</sup> `AppendMerklePath` and `AppendMerklePathByIndex` write into slices the
-caller supplies and keeps, so a proof server reusing its buffers generates proofs without
-allocating at all. No other library here exposes the proof buffers; every one of them
-returns freshly allocated structures. It is what makes the concurrency row possible a
-proof that allocates nothing shares nothing, so it scales with cores instead of
-contending on the garbage collector.
-<sup>3</sup> A package-level verify taking a proof, a root and the data. onrik's is a
-method, so it needs a `Tree` value it does not otherwise use.
-<sup>4</sup> Or split, under `WithRFC6962`. <sup>5</sup> Or duplicate, with `DoubleOddNodes`.
-
-That last row decides interoperability. These libraries agree on the root for
-any power-of-two leaf count and split into three groups otherwise, so a proof from one
-group will not verify against a root from another. merkletree's default agrees with txaty
-and with xsleonard's `DoubleOddNodes`; its `WithRFC6962` mode is checked against the
-Certificate Transparency reference vectors in [`oracle/`](oracle/).
 
 #### Install
 ```
