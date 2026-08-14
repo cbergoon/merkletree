@@ -2,7 +2,7 @@
 <p align="center">
 <a href="https://github.com/cbergoon/merkletree/actions/workflows/ci.yml"><img src="https://github.com/cbergoon/merkletree/actions/workflows/ci.yml/badge.svg" alt="Build"></a>
 <a href="https://pkg.go.dev/github.com/cbergoon/merkletree"><img src="https://pkg.go.dev/badge/github.com/cbergoon/merkletree.svg" alt="Docs"></a>
-<a href="#"><img src="https://img.shields.io/badge/version-0.4.0-brightgreen.svg" alt="Version"></a>
+<a href="#"><img src="https://img.shields.io/badge/version-0.5.0-brightgreen.svg" alt="Version"></a>
 </p>
 
 An implementation of a Merkle Tree written in Go. A Merkle Tree is a hash tree that provides an efficient way to verify
