@@ -1,345 +1,328 @@
-# Optimizations
+# Optimization notes: three passes over merkletree
 
-A record of the performance work that went into v0.5.0: what was slow, how it was found,
-what was changed, and what it bought. Written for anyone who wants the reasoning rather
-than the diff, including the two changes that measured well and bought almost nothing.
+This document records the performance work that took `merkletree` from "competitive"
+to first place on nine of the fourteen axes in [`benchmarks/ANALYSIS.md`](benchmarks/ANALYSIS.md),
+in enough detail to reconstruct the reasoning behind each change. It is organized the
+way the work actually happened: three passes, each starting from a measurement, each
+verified before the next began.
 
-Numbers are from an Apple M5 Max on Go 1.26 with SHA-256, `-count=6` through benchstat
-unless stated. Ratios travel; absolute values do not.
+Ground rules that held throughout:
+
+- **No public API changes**, with one deliberate exception — the `Append` proof methods,
+  an addition shipped as 0.5.0. Nothing was renamed, no signature changed, no behavior
+  documented to callers moved.
+- **No root changes.** Every construction produces byte-for-byte the tree it produced
+  before, asserted by golden tests, the RFC 6962 oracle, and cross-library root
+  agreement.
+- **Measure, change, verify, measure again.** Every change below carries a number, and
+  the full battery — unit tests, `-race`, four fuzz targets, the Certificate
+  Transparency vectors in [`oracle/`](oracle/), and the cross-implementation checks in
+  [`benchmarks/`](benchmarks/) — ran green after each pass.
+
+Numbers are from an Apple M5 Max, Go 1.26, SHA-256, benchstat medians unless marked
+otherwise. Ratios are the durable part; absolute values are machine-specific.
+
+## The starting diagnosis
+
+The comparison in `benchmarks/ANALYSIS.md` had already established that construction is
+hashing-bound (all six libraries within ~8% serially) and that the library's two real
+weaknesses were **allocation-shaped**: per-proof allocation capped concurrent serving at
+~2× scaling, and verification allocated per level. A CPU profile of construction
+confirmed it from the other direction: ~37% of samples in `runtime.madvise` (the
+allocator returning pages), ~6% in SHA-256, and ~5% in tree code. The allocation profile
+was blunter still — 98.5% of allocated *objects* during a build were the caller's own
+`CalculateHash` digests. The library's job was to get out of the allocator's way.
 
 ---
 
-## 1. The scan: O(n) per proof, O(n²) per set
+## Pass 1: allocation on the hot paths
 
-**The single largest problem in the library, and not an allocation problem at all.**
+### 1. The leaf index is built over one backing string
 
-### Symptom
+`WithLeafIndex` builds a `map[string]int` from leaf hash to position. The old loop
+inserted with `idx[string(l.Hash)] = i`, and Go's map insert copies the string key —
+one heap allocation per leaf, which made the index the single largest allocation source
+in an indexed build.
 
-`GetMerklePath` and `VerifyContent` located content by walking `Leafs` and calling
-`Content.Equals` on each one. The walk up the tree afterwards is O(log n). The search in
-front of it was O(n).
+The fix (`buildLeafIndex`, merkle_tree.go): write every leaf hash into one
+`strings.Builder`, take the resulting string once, and key the map with **substrings of
+that one backing**. Substrings share the parent string's memory, so n keys cost one
+allocation instead of n. Every key is retained by the map anyway, so the backing pins
+nothing that was not already pinned — the same bytes stay alive in one object instead
+of n.
 
-### How it was isolated
+Effect at 65,536 leaves: an indexed build fell from **131,401 to 65,866 allocations
+(−50%)** and ~3% in time. A side effect worth keeping: the keys are now contiguous in
+memory, and large-tree leaf-index lookups got measurably faster (−4.5% at n=64,000)
+from cache locality alone.
 
-Timing `GetMerklePath` at a fixed tree size says nothing, because the cost of the scan
-and the cost of the walk are summed. The way to separate them is to hold the tree
-constant and vary only *where the target sits*:
+### 2. `VerifyContent` walks with one hasher and one buffer
 
+`VerifyContent` climbs from a leaf to the root, recomputing three digests per level
+(each child from what sits beneath it, then the parent from the pair). The old code
+called `calculateNodeHash` per node, and each call created a fresh hasher and a fresh
+digest slice — roughly six allocations per level, so the cost of verifying grew with
+depth and was dominated by allocation, not hashing.
+
+The fix mirrors what `verifyNode` (the `VerifyTree` walk) already did: a new internal
+`Node.appendCalculatedHash(h, dst)` appends a node's recomputed hash into a caller-owned
+buffer using a caller-owned hasher, and `VerifyContent` threads one hasher and one
+scratch buffer through the whole climb. The buffer never holds more than one level
+(three digests), and the ordering subtlety is inherited from `verifyNode`: children's
+digests are written into the hasher *before* `Sum` appends, so buffer growth cannot
+invalidate the slices being read.
+
+Effect: allocations went from growing with depth (70 at n=4,096) to a **flat 4**; bytes
+−94%; serial time −8% to −28% by size; and the parallel variant — where the allocator
+was the shared bottleneck — went **1,176 ns → 327 ns (−72%)**. In the cross-library
+tables, the `VerifyContent` gap over plain proof replay narrowed from ~3.7× to ~2.5×,
+which is now close to the true algorithmic difference between the two operations.
+
+### 3. Proof slices are exact-fit
+
+`pathFromLeaf` sized the proof's two slices with `bits.Len(uint(len(m.Leafs)))`, which
+over-allocates by one entry exactly when the leaf count is a power of two — the common
+case. `bits.Len(uint(len(m.Leafs) - 1))` is the tree's depth exactly, for power-of-two,
+padded, and RFC-split counts alike. One spare `[][]byte` entry is 24 bytes; at
+proof-serving rates on the hottest allocation site in the package, it was measurable.
+
+### 4. Option-less verification stopped allocating its configuration
+
+Package-level `VerifyProof`/`VerifyProofWithDigest` built a fresh config object
+(`configFromOptions`) on every call, even with no options. A shared, immutable
+`defaultProofConfig` now serves the no-options case; the with-options path is
+unchanged. The fast path could not live inside `configFromOptions` itself, because
+`NewTreeWithOptions` uses the same function and mutates the result — the constructor
+must keep getting a fresh value.
+
+### 5. Smaller cuts in the same spirit
+
+- Parallel `buildIntermediate` created a fresh set of worker hashers **per level**; one
+  set is now created lazily and reused across every level large enough to parallelize.
+- `treeData.marshalBinary` computed nothing about its output size and let
+  `bytes.Buffer` double its way up, re-copying the payload log n times and finishing up
+  to 2× oversized. The wire size is exactly computable (a `uvarintLen` helper), so the
+  buffer is grown once. With `snapshot` also preallocating its record slice,
+  `MarshalBinary` dropped **−26% to −37% in time and −44% to −58% in bytes**.
+- `RebuildTree` preallocates its content slice; `MerkleTree.String()` uses a
+  `strings.Builder` instead of quadratic string concatenation.
+
+---
+
+## Pass 2: the decoder, the registries, and a pool with a safety argument
+
+Pass 1 left construction at its floor (the remaining bytes are the exported `Node`
+graph; the remaining objects are the caller's digests), so pass 2 started from a fresh
+profile — which pointed at serialization: per-record registry locks, reflection
+lookups, and two copies per record on decode.
+
+### 6. The binary decoder became a cursor, and payloads share an arena
+
+The old decoder wrapped the input in a `bytes.Reader` and copied every field out of it.
+Two structural facts made most of that work unnecessary:
+
+- **Fields that are only inspected need not be copied.** The decoder is now a cursor
+  (`binaryReader{data, off}`) over the input slice: type names are viewed in place and
+  interned (one string per distinct name, not per record), and the recorded Merkle root
+  is viewed in place because it is compared once and dropped. Every read is a bounds
+  check and a reslice with no interface calls.
+- **Payloads must be copies, but not separate ones.** `UnmarshalBinary` implementations
+  are permitted to retain the slice they are handed, so payloads must not alias the
+  caller's input — but the old one-`make`-per-record approach was n allocations for a
+  guarantee one allocation can provide. All payload copies are now carved from a single
+  arena sized to the remaining input. Each carve is **capacity-capped** at its own
+  length, so an implementation that appends to its payload cannot reach the record
+  stored after it, and since all content lives and dies with the decoded tree, the
+  shared backing changes no lifetime.
+
+The wire format's guarantees — canonical varints, length-validation before allocation,
+trailing-byte rejection — are unchanged, and the fuzz corpus that hammers exactly this
+parser passed untouched.
+
+### 7. Type resolution is cached across a marshal or unmarshal
+
+Encode took the content registry's `RWMutex` and did a reflect-map lookup **per leaf**;
+decode did the same per record, plus the name lookup. A tree overwhelmingly holds one
+concrete content type, so both loops now carry a one-entry `contentTypeCache` — the
+lock and lookup are paid once, and because the decoder interns names, the cache check
+on decode is usually a pointer-equal string compare.
+
+Combined, passes over the codec: `UnmarshalBinary` **−13% to −18% time and −33%
+allocations** (24.6k → 16.4k at n=4,096); `MarshalBinary` another −14% to −19% on top
+of pass 1, for a cumulative **247 µs → 133 µs (−46%)** at n=4,096. What remains on both
+paths is almost entirely the caller's own marshaling and the rebuild's hashing.
+
+### 8. A hasher pool, but only where immutability makes it safe
+
+The obvious move — pool hashers per tree — was rejected twice, for a reason worth
+recording: `hashStrategy` is a mutable field inside the package, and the property tests
+pin the semantic that swapping it after construction takes effect immediately on the
+verification paths. A pool filled before a swap would keep hashing with the old
+strategy. Where that hazard cannot exist is `defaultProofConfig`: private, immutable,
+its strategy fixed at `sha256.New` forever. It alone carries a `sync.Pool`, so the
+option-less `VerifyProof` path recycles its hasher across calls and goroutines, while
+per-tree paths keep creating theirs. (`largestPowerOfTwoBelow` also collapsed from a
+loop to `1 << (bits.Len(uint(n-1)) - 1)` in this pass.)
+
+---
+
+## Pass 3: the structural changes
+
+Pass 3 took on the three items that survived two passes of shaving: an algorithmic gap,
+the last non-caller allocation in verification, and the API-shaped ceiling the analysis
+document had predicted from the start.
+
+### 9. The RFC 6962 interior build forks
+
+`WithParallelism` parallelized leaf hashing in every mode, and interior hashing in the
+default mode — but `buildRFC6962` was a serial recursion, so RFC trees (the mode the
+documentation steers security-conscious users toward) left roughly half their hash work
+single-threaded.
+
+The enabler is a counting argument: an RFC subtree over k leaves owns **exactly k−1
+interior nodes**, whatever shape its splits take. That means every subtree's slab
+entries and digest-buffer slots can be assigned by position before anything is built —
+the subtree over `nl` owns region `[base, base+len(nl)-1)`, its left child the first
+k−1 entries, its right child the next len−k−1, the joining node the last one. Sibling
+regions are disjoint by construction, so `buildParallel` forks the recursion across
+goroutines with **no locks, no channels, and no coordination at all**; the hasher
+budget is created up front on the calling goroutine (preserving the guarantee that a
+caller-supplied strategy is never invoked concurrently) and split between subtrees in
+proportion to their size. Panics out of caller-supplied hashers are carried back and
+re-raised on the calling goroutine, and errors are delivered left-subtree-first so the
+same input always fails the same way — both matching the serial build's behavior.
+
+Effect at 65,536 short leaves: the parallel RFC build fell from **5.6 ms (leaf hashing
+only) to 2.1 ms**, and stands at ~5× the 10.0 ms serial build. The same
+`parallelInteriorMinNodes` threshold as the default mode keeps small trees from paying
+for goroutines they cannot use.
+
+### 10. Verification's scratch state pooled as a pair
+
+After pass 2, an option-less `VerifyProof` still allocated its replay buffer, because
+the internal helper *returned* the computed root and a returned slice cannot go back to
+a pool. The helper became `proofReproducesRoot(digest, path, index, root) (bool, error)`
+— the comparison moved inside — and the buffer now travels with the pooled hasher as
+one `proofScratch` pair on `defaultProofConfig`. One pool `Get` per verification, zero
+library-side allocations. Configs built from explicit options keep the old
+two-allocation path; a pool that lives for one call is worse than no pool.
+
+Effect: standalone verification is **2 allocations and 56 B/op flat at every size —
+both belonging to the caller's `CalculateHash`** — against 32 allocations for the
+nearest competitor at depth 16. Concurrent verification went 119 → 82 ns/op across the
+two passes.
+
+### 11. The append proof API
+
+The analysis document had said it from the beginning: each proof returns two freshly
+allocated slices, ~500 B/op, and at millions of proofs per second the garbage collector
+becomes the shared resource every goroutine queues on — "an API that appended into a
+caller-supplied buffer would lift this; the current one cannot." Every internal remedy
+was exhausted, so the API grew its one addition:
+
+```go
+path, index, err = tree.AppendMerklePath(path[:0], index[:0], content)
+path, index, err = tree.AppendMerklePathByIndex(path[:0], index[:0], i)
 ```
-GetMerklePath, n=4096, same tree, same 12-level path, identical allocations:
-  first leaf    214 ns
-  middle leaf  3660 ns
-  last leaf    7990 ns
-```
 
-Same work in the walk, 37× the time. **97% of the call was the scan.** That single
-measurement reframed the whole exercise — every allocation in the proof path could have
-gone to zero and it would have moved the number by 3%.
+Styled after `strconv.AppendInt`: same proofs, byte for byte, delivered into slices the
+caller owns; errors return the slices unchanged. The documented contract is explicit
+that appended hashes alias the tree's own storage (as the `Get` forms' results always
+did) and that a proof which must outlive its buffer's next reuse must be copied.
 
-Extended to the full proof set, the quadratic showed plainly:
+Why the effect is as large as it is: in this library, **generating a proof never
+computes a hash** — the tree stores every node's digest, so a proof is ~16 pointers to
+existing hashes plus 16 side markers, and the walk itself costs ~1 ns per level. The
+two slice allocations were most of the remaining per-proof cost, and under concurrency
+they were effectively all of it. With them gone, a proof touches no shared state of any
+kind:
 
-| n | full proof set | per proof |
+| | single proof (65,536) | all proofs (4,096) | 18 goroutines (16,384) | scaling |
+|---|---|---|---|---|
+| slice-returning by-index | 76 ns, 2 allocs | 116 ns/proof | 82 ns/op | 2.05× |
+| **append, reused buffers** | **17 ns, 0 allocs** | **25 ns/proof, 0 allocs** | **2.9 ns/op** | **16.4×** |
+
+One accounting honesty note for the writeup: 2.9 ns/op under `RunParallel` is
+throughput (wall time over total proofs across 18 goroutines); per-proof CPU is still
+~50 ns, consistent with the single-goroutine figure. The claim is near-perfect scaling,
+not a magically cheaper proof — and it made merkletree the best *scaler* in the
+comparison as well as the fastest, where it had previously ranked 4th of 6 on that
+axis.
+
+---
+
+## Changes deliberately not made
+
+These are as much a part of the record as the changes above.
+
+- **Per-tree hasher pools.** Rejected twice; see §8. The internal strategy-swap
+  semantic is tested, and stale pooled hashers would silently violate it.
+- **Packing a proof's two slices into one allocation.** `([][]byte, []int64)` cannot
+  share a backing without `unsafe`. The append API solves the same problem inside the
+  rules.
+- **Merging per-level slabs in `buildIntermediate`.** The allocation profile showed
+  ~40 objects per build at stake — complexity without a payoff.
+- **In-place level arrays.** The classic write-index-below-read-index trick races
+  against the parallel build's chunk boundaries.
+- **Zero-copy decode payloads.** Handing `UnmarshalBinary` implementations subslices
+  of the caller's input would violate the documented retention contract; the arena
+  keeps the copy but not the per-record allocation.
+- **Shrinking `Node` or the `[]int64` side markers.** Both are fixed by the exported
+  API. The 640 B vs 516 B wire-size gap against txaty remains the one
+  library-attributable weakness in the comparison, and closing it is an API break.
+
+## How correctness was held
+
+The regression surface for this kind of work is silent wrongness, so the apparatus
+grew alongside the optimizations:
+
+- **Every pass:** full test suite, `go vet`, `-race` (which drives the parallel
+  builds — including the RFC fork-join — across all modes, sizes 1–4097, and worker
+  counts up to 4096), all four fuzz targets (which hammer the rewritten wire decoder,
+  including canonical-varint and hostile-length rules), the CT reference vectors in
+  `oracle/`, and cross-library root agreement in `benchmarks/`.
+- **The append API** carries its own suite (`merkle_tree_append_test.go`):
+  byte-equivalence with the `Get` forms across every construction and size class,
+  prefix preservation, error contracts, end-to-end verification, and the zero-alloc
+  property pinned with `testing.AllocsPerRun` so it cannot regress silently.
+- **The benchmarked paths are proven, not presumed**
+  (`benchmarks/proofcheck_test.go`): the exact serving loops the benchmarks time are
+  replayed for every leaf, required to agree across all four forms byte for byte, and
+  required to verify against a Merkle root computed by a *different library*
+  (wealdtech), including a concurrent variant under `-race`. The timed `append`
+  benchmarks additionally verify their final proof after the clock stops, so none of
+  them can quietly measure a no-op.
+
+## Results
+
+Library-side costs, before the first pass and after the third (n=4,096 unless noted):
+
+| operation | before | after |
 |---|---|---|
-| 16,000 | 214 ms | 13.4 µs |
-| 32,000 | 887 ms | 27.7 µs |
-| 100,000 | **9.8 s** | 97.8 µs |
-
-Per-proof cost grows linearly with tree size, so the set grows quadratically. Note the
-small-n numbers grow *sub*-linearly (≈ n^0.63 below 16k) — a cache artifact, since the
-leaf array still fits. Past 16k it goes strictly linear, which is why extrapolating from
-small n underestimates the damage.
-
-### The three fixes
-
-Increasing in what the caller must know, decreasing in cost:
-
-**`WithLeafIndex()`** — a `map[string]int` from leaf hash to lowest position, built at
-construction. A lookup becomes one `CalculateHash` on the query plus a map probe.
-
-Two properties make it cheaper than it looks. It needs **no extra hashing to build**:
-every leaf hash it records was already computed and stored on the node during
-construction, so it is n map inserts. And it is built **eagerly, not lazily** — a lazily
-populated map would need a mutex on the read path, and a built tree is otherwise safe for
-concurrent reads with no synchronization at all. Eager keeps proof serving lock-free,
-which turns out to matter enormously (§6).
-
-It is opt-in for two reasons: ~40 bytes per leaf, and it changes how content is located,
-from `Equals` to a hash comparison. The `Content` interface already requires the two to
-agree, so any implementation honoring that contract gets the same leaf either way —
-including the "earliest matching leaf wins" rule, preserved by storing the lowest index
-per hash.
-
-**`GetMerklePathByIndex(i)`** — takes the position directly. No option, no memory, and it
-does not hash the query at all.
-
-**`AppendMerklePath` / `AppendMerklePathByIndex`** — the same proofs written into slices
-the caller supplies and keeps, so a server reusing its buffers allocates nothing per
-proof.
-
-### Result
-
-Single proof, worst-case leaf (ns/op):
-
-| n | scan | `WithLeafIndex` | by index | append |
-|---|---|---|---|---|
-| 4,096 | 7,802 | 146 | 84.9 | **13.4** |
-| 65,536 | 129,730 | 135 | 76.3 | **16.7** |
-
-Full proof set at 64,000 leaves: **3.71 s → 12.8 ms** with the index, **7.9 ms** by
-index. The quadratic is gone — per-proof cost is now flat in n.
-
-### The subtlety worth writing down
-
-Hash-based lookup and `Equals`-based lookup differ in **which method can fail**. The
-index hashes the query and never calls `Equals`; the scan calls `Equals` and never hashes
-the query. So a query whose `CalculateHash` errors fails only when indexed, and content
-whose `Equals` errors surfaces only when scanning. This is inherent to replacing a
-comparison with a hash, not a defect, but it is observable and is pinned by a test that
-asserts both directions.
-
----
-
-## 2. Verification allocated a hasher per node
-
-### Symptom
-
-`VerifyTree` at 4,096 leaves: **12,286 allocations, 768 KiB**. The construction path had
-already been optimized to hand out nodes from per-level slabs; verification had never had
-the same treatment.
-
-A memory profile put it beyond doubt:
-
-```
-  75.04%  crypto/internal/fips140/sha256.(*Digest).Sum
-  23.99%  crypto/internal/fips140/sha256.New (inline)
-```
-
-`hashInterior` called `m.hashStrategy()` on every interior node, and `h.Sum(nil)`
-allocated a fresh digest for each. The node count is linear in the leaves, so a tree of
-any size paid two allocations per node.
-
-### The fix
-
-Thread one hasher and one buffer through the entire recursive walk. The interesting part
-is keeping the buffer small. Naively appending every node's digest makes it O(n); the
-trick is that a node's children are dead the moment its own hash is computed, so the
-result slides down over them:
-
-```go
-off := len(dst)
-dst, rightMatched, err := n.Right.verifyNode(h, dst)
-mid := len(dst)
-dst, leftMatched, err := n.Left.verifyNode(h, dst)
-end := len(dst)
-
-dst, err = n.Tree.appendInteriorHash(h, dst, dst[mid:end], dst[off:mid])
-
-// children are dead; slide this node's digest down over them
-dst = dst[:off+copy(dst[off:], dst[end:])]
-```
-
-The buffer stays the **depth** of the tree, not the size of it, so it is preallocated
-once at `(bits.Len(len(Leafs))+2) * h.Size()` and never grows.
-
-One ordering detail makes this safe: `appendInteriorHash` writes both children into the
-hasher *before* `Sum` appends, so a reallocation of `dst` cannot invalidate the slices
-passed into it.
-
-### Result
-
-| n=4,096 | allocations | bytes | time |
-|---|---|---|---|
-| default | 12,286 → 4,098 (−67%) | 768 KiB → 129 KiB (−83%) | **−15.6%** |
-| RFC 6962 | 20,478 → 4,098 (−80%) | 1,408 KiB → 129 KiB (−91%) | **−26.1%** |
-
-The residual 4,098 is entirely the *caller's* `CalculateHash` on the leaves. Library-side
-allocation for the whole walk is now about 2. RFC 6962 gains most because it hashes twice
-per leaf.
-
-The same sliding-buffer replay is what `VerifyProof` uses, which is why standalone
-verification allocates a flat 2 objects at every tree size where other libraries grow
-with depth.
-
----
-
-## 3. Decoding copied every payload twice
-
-`unmarshalRegisteredContent` did:
-
-```go
-bu.UnmarshalBinary(bytes.Clone(payload))
-```
-
-with the comment that `UnmarshalBinary` implementations may retain the slice they are
-handed. True — but `binaryReader.bytes()` already does `make([]byte, n)` + `io.ReadFull`,
-so `payload` was **already** a slice nobody else held. The `treeData` carrying it is
-transient and dropped once the tree is built. The clone was a second copy of every
-content payload on the way in, one wasted allocation per leaf.
-
-The strongest evidence it was safe to drop: the `UnmarshalWith` path had always handed
-`record.Payload` straight to the caller's decoder on exactly that reasoning. The registry
-path was the inconsistent one.
-
-Separately, every record's type name was re-allocated (`make` + `string()`) though a tree
-almost always holds one content type. Interning them costs one string for the whole
-payload, and indexing a map with `string(byteSlice)` does not allocate, so a repeat name
-costs only the probe.
-
-**Result: −25% allocations, −13% bytes, −8% time** on `UnmarshalBinary`.
-
----
-
-## 4. A negative result worth keeping
-
-In isolation, the decode fixes above measured **−25% allocations but only −3% time.**
-
-That is the finding, not a footnote. The decode path's cost is `reflect.New` and
-interface boxing per leaf, plus the full tree rebuild — not allocation volume. Cutting a
-quarter of the allocations moved almost nothing.
-
-The general lesson the whole exercise kept re-teaching: **allocation count is a proxy,
-and sometimes a bad one.** It was the right thing to chase in verification (§2), where it
-was 75% of the profile. It was the wrong thing to chase in decoding. And in proof
-generation (§1) the real problem was algorithmic and no amount of allocation work would
-have touched it.
-
-The −8% finally observed on decode came only after parallel construction landed and
-changed the mix.
-
----
-
-## 5. Small, free wins
-
-**Proof slice preallocation.** `GetMerklePath` started `merklePath` and `index` at nil and
-grew them by doubling — 10 allocations for a 12-entry path at n=4,096. Sizing both to
-`bits.Len(len(m.Leafs))` up front: **10 → 2**.
-
-**One option resolver.** Construction and proof verification now resolve `TreeOption`
-through the same `configFromOptions`, so a tree and a proof checked against it cannot
-disagree about what an option meant, and the RFC 6962 / sorted conflict is rejected
-identically by both. Correctness rather than speed, but it removes a class of drift.
-
----
-
-## 6. Concurrency: the ceiling moved twice
-
-A built tree is meant to be shared — one tree, many goroutines answering proof requests.
-Single-threaded numbers say nothing about that, so it was measured separately, as a
-scaling curve at 1, 4 and 18 goroutines rather than by comparing against a
-differently-shaped benchmark.
-
-**First ceiling: the allocator.** With the leaf index, nothing on the read path takes a
-lock. But each proof allocated its two slices — ~512 B/op, which at 13M proofs/sec is
-several GB/s — and the garbage collector became the shared resource instead. Scaling
-stalled at ~2× on 18 cores.
-
-**Second ceiling: removed.** The `Append` forms hand the buffers to the caller. A proof
-that allocates nothing shares nothing — no lock, no allocator, no collector — and the
-curve changes shape:
-
-| | 1 | 4 | 18 | speedup |
-|---|---|---|---|---|
-| append | 48.2 | 11.8 | **2.9** | **16.4×** |
-| by index | 168.8 | 73.4 | 82.4 | 2.05× |
-| leaf index | 231.7 | 86.5 | 86.5 | 2.68× |
-
-**2.9 ns per proof under 18 goroutines**, 16.4× the single-goroutine rate. The lesson
-generalizes: past a certain point, "lock-free" is not the bar — *allocation-free* is,
-because the collector is a lock you did not write.
-
-For contrast, one comparison library guards its leaf lookup with an exclusive mutex
-around a map that is only ever read after construction, and gets **slower** past four
-goroutines (1.14× across the same range).
-
----
-
-## 7. Parallel construction
-
-`WithParallelism(n)` spreads content hashing across goroutines. Off by default, because
-it calls `Content.CalculateHash` concurrently and only the caller knows whether their
-implementation is safe for that — that requirement is the entire cost of the option.
-
-The root is unaffected: every hash lands in a slot fixed by its position, so a
-parallel-built tree is byte for byte the serial one. Hashers are created up front, one
-per worker, so a caller-supplied strategy is never invoked concurrently even though the
-build is.
-
-What it is worth depends almost entirely on what `CalculateHash` costs, and the
-break-even moves with it:
-
-| leaf size | n=64 | n=256 | n=1024 | n=4096 | break-even |
-|---|---|---|---|---|---|
-| 32 B | 0.35× | 0.67× | 0.88× | 1.30× | between 1,024 and 4,096 |
-| 1 KiB | 0.87× | 1.48× | 1.97× | 3.07× | between 64 and 256 |
-| 16 KiB | 3.06× | 4.47× | 9.43× | 12.10× | always worth it |
-
-At 16 KiB leaves it is 40 GB/s against 3.4 GB/s serial. Below the break-even it is
-genuinely slower — 6.5× slower at 16 short leaves — which is why measuring beats
-assuming here.
-
----
-
-## 8. What content cost does to all of it
-
-Every benchmark used ~7-byte leaves, which makes hashing nearly free and the surrounding
-machinery nearly everything. That ratio decides what is being measured. Repeating
-construction across leaf sizes:
-
-| leaf size | spread, fastest to slowest implementation |
-|---|---|
-| 32 B | 2.17× |
-| 1 KiB | 1.31× |
-| 16 KiB | **1.02×** |
-
-**At 16 KiB leaves the implementation stops mattering for construction** — everything
-converges on ~3.35 GB/s of SHA-256. Per-node overhead is only worth arguing about when
-leaves are small.
-
-Two things move the other way. Parallelism grows with content cost (§7), because it
-changes the hashing bill rather than the overhead around it. And **lookup by value
-degrades while lookup by position does not**, because locating content by value means
-hashing the query:
-
-| | 32 B | 1 KiB | 16 KiB |
-|---|---|---|---|
-| by index | 85 | 61 | 50 |
-| leaf index | 144 | 406 | 4,863 |
-
-A 1.7× gap becomes **97×**. The practical guidance: for expensive content, use
-`WithParallelism` and address leaves by position — and specifically *do not* use
-`WithLeafIndex`, which pays a full `CalculateHash` per lookup for an index you do not
-need if you already track positions.
-
----
-
-## Method notes
-
-Things that changed conclusions, and would have been missed otherwise.
-
-**Vary position, not just size.** The scan (§1) was invisible in ordinary benchmarks
-because it was summed with the walk. Holding the tree fixed and moving the target
-separated them in one measurement.
-
-**Vary the input cost.** Every ranking in §8 was an artifact of tiny leaves. A benchmark
-suite that only ever uses small inputs is measuring its own harness.
-
-**Measure scaling as a curve.** `-cpu=1,4,18` on the same benchmark shows contention
-directly. Comparing a parallel benchmark against a differently-shaped serial one does
-not, and invites wrong conclusions in both directions.
-
-**Race detection needs iterations.** A benchmark under `-race` at `-benchtime=1x` catches
-nothing — the goroutines barely overlap. A real race in a benchmark was reproduced,
-planted back, and confirmed caught only at ≥20 iterations; CI uses 200. The first version
-of that CI job would have passed on the very bug it was added for.
-
-**Race-check benchmarks at all.** Some concurrent paths are exercised only by benchmarks,
-and `go test -race` never runs them.
-
-**Verify the oracle catches things.** The RFC 6962 cross-check is only worth its runtime
-if it fails when the construction is wrong. Transposing two children makes it fail at two
-leaves while the entire rest of the suite — property tests, golden files, fuzzing, round
-trips — stays green. A transposed tree is perfectly self-consistent.
-
-**Attribute residual allocations.** After §2, verification still allocated ~4,098 per
-build at n=4,096. Profiling showed all of it in the caller's `CalculateHash`. Knowing
-which allocations are not yours is what tells you when to stop.
+| Indexed build, allocations (n=65,536) | 131,401 | 65,866 |
+| `VerifyContent` | 10.3 µs, 70 allocs | 9.5 µs, 4 allocs |
+| `VerifyContent`, parallel | 1,176 ns | 327 ns |
+| `VerifyProof` (n=65,536) | 949 ns, 5 allocs | 934 ns, 2 allocs (both the caller's) |
+| `VerifyProof`, 18 goroutines | 119 ns, 248 B | 82 ns, 56 B |
+| `MarshalBinary` | 247 µs, 1.06 MB | 133 µs, 0.45 MB |
+| `UnmarshalBinary` | 858 µs, 24.6k allocs | 720 µs, 16.4k allocs |
+| RFC 6962 parallel build (n=65,536) | 5.6 ms | 2.1 ms |
+| Single proof (n=65,536) | 82 ns, 2 allocs | 17 ns, 0 allocs (append) |
+| Full proof set, per proof | 113 ns | 25 ns, 0 allocs (append) |
+| Concurrent proofs, 18 goroutines | 89.6 ns/op, ~2× scaling | 2.9 ns/op, 16.4× scaling |
+
+Against the field, the refreshed scorecard in `benchmarks/ANALYSIS.md` has merkletree
+first on 9 of 14 axes — every proof-generation and verification axis, concurrent
+throughput *and* concurrent scaling, parallel construction, dependencies,
+specification validation, and serialization — with the remaining gaps (serial
+construction within 1%, memory, wire size) each explained there by a deliberate design
+choice rather than an implementation deficit.
+
+The arc of the three passes, compressed: the first removed allocations the code did
+not need to make; the second removed work the decoder and registries repeated per
+record when once sufficed, and pooled the one place immutability made pooling safe;
+the third changed structure — a fork-join the RFC construction's own arithmetic makes
+coordination-free, and an API form that moves the last two allocations to the caller,
+where they happen once instead of per proof. Nothing got a faster hash function and
+nothing skipped work: the proofs are byte-identical throughout and hash to roots other
+libraries compute.
