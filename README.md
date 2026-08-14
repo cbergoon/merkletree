@@ -242,7 +242,9 @@ Benchmark tasks:
 
 1. **Proof generation for all the blocks**: from a cold start, build the tree and come away
    holding the Merkle root and the proofs of every data block.
-2. **Proof verification**: verify a single proof against a root.
+2. **Tree construction**: build the tree and stop, which is the part `WithParallelism`
+   actually changes.
+3. **Proof verification**: verify a single proof against a root.
 
 <p align="center">
 <img src="benchmarks/proof-generation.svg" alt="Proof generation for all blocks" width="49%">
@@ -258,12 +260,12 @@ At depth 18 (262,144 leaves), generating every proof:
 
 | | time | vs. merkletree |
 | --- | --- | --- |
-| **merkletree** (append, parallel) | **22.3 ms** | — |
-| txaty/go-merkletree (parallel) | 43.3 ms | 1.9× |
-| **merkletree** (append) | 44.2 ms | 2.0× |
+| **merkletree** (append, parallel) | **22.2 ms** | — |
+| txaty/go-merkletree (parallel) | 42.9 ms | 1.9× |
+| **merkletree** (append) | 45.6 ms | 2.1× |
 | txaty/go-merkletree | 91.0 ms | 4.1× |
-| wealdtech/go-merkletree | 41.2 s | 1,847× |
-| merkletree without either option | 91.4 s | 4,102× |
+| wealdtech/go-merkletree | 41.0 s | 1,849× |
+| merkletree without either option | 91.8 s | 4,143× |
 
 The last row is the same library with no options set, and it is on the chart on purpose.
 `GetMerklePath` locates content by scanning every leaf, so a full proof set is O(n²),
@@ -272,7 +274,7 @@ with `WithLeafIndex`, or addressing leaves by position with `GetMerklePathByInde
 `Append` forms, is the difference between the top line and the bottom one.
 
 Both parallel lines sit *above* their serial counterparts until the tree is large enough
-to pay for the goroutines: merkletree crosses over at depth 10 (1,024 leaves) and txaty at
+to pay for the goroutines: merkletree breaks even around depth 9 (512 leaves) and txaty at
 depth 11. Below that, parallel construction is a loss for both, 10× worse at depth 1,
 which is why neither library enables it by default. Leaves here are 64 bytes; the more
 expensive the content, the earlier the crossover (see
@@ -280,10 +282,33 @@ expensive the content, the earlier the crossover (see
 and below 64 at 16 KiB).
 
 Verification is a like-for-like comparison, a proof replayed against a root with no tree
-involved. At depth 18 merkletree verifies in 1,068 ns against txaty's 1,390 ns and
-wealdtech's 1,356 ns, allocating 2 objects where the others grow with tree depth.
+involved. At depth 18 merkletree verifies in 1,074 ns against txaty's 1,418 ns and
+wealdtech's 1,355 ns, allocating 2 objects where the others grow with tree depth.
 
-Regenerate both charts and the underlying numbers with:
+##### The same numbers on a linear axis
+
+A log axis is the only way to fit a range that runs from nanoseconds to a minute and a
+half, but it also flattens the thing the chart is there to show. One gridline is a
+doubling, so a line sitting four times above another looks two gridlines away rather than
+four times worse. The same measurements on a linear scale, over the depths where the
+absolute differences are big enough to see:
+
+<p align="center">
+<img src="benchmarks/proof-generation-linear.svg" alt="Proof generation, linear scale" width="49%">
+<img src="benchmarks/construction.svg" alt="Tree construction, linear scale" width="49%">
+</p>
+
+The left chart leaves out the two quadratic lines. By depth 18 they are three orders of
+magnitude above everything else, and an axis tall enough to hold them puts the rest of
+the field flat on the floor. They are still on the log chart above and in the table.
+
+The right chart is construction on its own, no proofs. The three serial lines land within
+a third of each other because they are all doing the same SHA-256 in the same order, so
+that is the band to read the parallel ones against. At depth 18 txaty's parallel build gains
+1.7× on its own serial, 37.7 ms down to 22.3 ms. merkletree's gains 6×, 28.7 ms down to
+4.8 ms, which is the whole distance between the top of the chart and the bottom.
+
+Regenerate the charts and the numbers behind them with:
 
 ```bash
 cd benchmarks && go run ./cmd/depthchart
