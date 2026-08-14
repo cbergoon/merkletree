@@ -44,15 +44,14 @@ this exercise. Where it is also the best of the field, the two columns agree.
 | Specification validated | **1 / 6** | CT vectors | none | none | see the `oracle/` module |
 | Serialization | **1 / 6** | binary + JSON | none | none | no other library offers it |
 
-Three things this table does not show, and which the sections below do. Rankings on the
-proof axes depend on how the leaf is addressed: the leading rows are
-`AppendMerklePathByIndex` reusing the caller's buffers, `GetMerklePathByIndex` and
-`WithLeafIndex` follow it, and without any of the three `merkletree` locates content by
-scanning and is joint last with `wealdtech`. Serial construction is a near-tie because
-every implementation is waiting on SHA-256, and the tie becomes exact as content grows —
-at 16 KiB leaves all six land within 3%. And the odd node policy means these libraries do
-not all produce the same root, so a faster one is not a drop-in replacement for a slower
-one.
+The table hides a few things the sections below spell out. Rankings on the proof axes
+depend on how the leaf is addressed: the leading rows are `AppendMerklePathByIndex`
+reusing the caller's buffers, `GetMerklePathByIndex` and `WithLeafIndex` follow it, and
+without any of the three `merkletree` locates content by scanning and is joint last with
+`wealdtech`. Serial construction is a near-tie because every implementation is waiting on
+SHA-256, and the tie becomes exact as content grows: at 16 KiB leaves all six land within
+3%. And since the odd node policy means these libraries do not all produce the same root,
+a faster one is not a drop-in replacement for a slower one.
 
 ## The libraries
 
@@ -67,18 +66,18 @@ one.
 
 Three design axes matter more than the rest.
 
-**How you address a leaf.** `merkletree` is the only library built around a content
-interface with an equality method, which is why locating content historically meant a
-scan. Everything else either takes an index or keeps an internal map. This is the single
-biggest performance difference in the whole comparison, and it is an API choice rather
-than an implementation one — the `Content` interface is also what lets `merkletree` hold
-arbitrary typed values and serialize them, which none of the others do.
+How you address a leaf. `merkletree` is the only library built around a content interface
+with an equality method, which is why locating content historically meant a scan.
+Everything else either takes an index or keeps an internal map. This is the single biggest
+performance difference in the whole comparison, and it is an API choice rather than an
+implementation one. The `Content` interface is also what lets `merkletree` hold arbitrary
+typed values and serialize them, which none of the others do.
 
-**What happens to a lone node.** Covered below; it changes the root.
+What happens to a lone node. Covered below; it changes the root.
 
-**Whether a proof can be checked without the tree.** `txaty`, `wealdtech`, `jvsteiner`
-and `merkletree` all expose a package-level verify taking a proof, a root and the data —
-the canonical Merkle use case, a light client holding a root and a proof and nothing
+Whether a proof can be checked without the tree. `txaty`, `wealdtech`, `jvsteiner` and
+`merkletree` all expose a package-level verify taking a proof, a root and the data, which
+is the canonical Merkle use case: a light client holding a root and a proof and nothing
 else. `onrik` exposes it only as a method, so a verifier there has to construct a `Tree`
 value it does not otherwise need. `xsleonard` cannot generate proofs at all.
 
@@ -87,11 +86,11 @@ value it does not otherwise need. `xsleonard` cannot generate proofs at all.
 This is the first thing to know before reading any benchmark, and it is asserted by
 `crosscheck_test.go` rather than claimed here.
 
-**With a power-of-two leaf count, all six agree exactly.** Same hash, same pairwise
+With a power-of-two leaf count, all six agree exactly. Same hash, same pairwise
 combination, same root. That agreement is what establishes the benchmarks are configured
 equivalently rather than accidentally comparing different work.
 
-**With any other leaf count, they split into three groups.** At n=5:
+With any other leaf count, they split into three groups. At n=5:
 
 | root prefix | libraries | policy |
 |---|---|---|
@@ -111,12 +110,12 @@ comments will predict them wrong; the grouping above is measured, not read.
 Two consequences worth stating plainly:
 
 - `merkletree`'s default construction agrees with two independent implementations, which
-  is the only external validation available for it — the Bitcoin-style construction has
-  no specification to check against. The RFC 6962 mode does, and is validated against the
-  Certificate Transparency reference vectors in the sibling `oracle/` module.
+  is the only external validation available for it, since the Bitcoin-style construction
+  has no specification to check against. The RFC 6962 mode does, and is validated against
+  the Certificate Transparency reference vectors in the sibling `oracle/` module.
 - Duplicating the trailing node is [CVE-2012-2459](https://nvd.nist.gov/vuln/detail/CVE-2012-2459):
   `[A B C]` and `[A B C C]` produce the same root. That affects the first group, this
-  library included, and is exactly what `WithRFC6962` exists to avoid. The third group
+  library included, and is what `WithRFC6962` exists to avoid. The third group
   (`wealdtech`) has a related collision from zero-padding.
 
 `merkletree`'s sorted-sibling mode is also checked against `txaty`'s OpenZeppelin
@@ -134,14 +133,14 @@ Time per tree, ns/op:
 | 65,536 | 7,674,500 | **3,075,300** | 9,673,900 | 6,470,500 | 7,993,700 | 7,609,300 | 8,237,500 | 16,424,000 |
 
 Construction is hashing-bound, so the serial implementations land within about 8% of each
-other at every size — they are all mostly waiting on SHA-256. The outlier is `jvsteiner`,
+other at every size; they are all mostly waiting on SHA-256. The outlier is `jvsteiner`,
 roughly 2× slower throughout, which its allocation count explains: 524,570 allocations at
 n=65,536 against `merkletree`'s 131,140.
 
 Parallelism is where the spread opens. At 65,536 leaves `merkletree` is 2.5× faster in
 parallel and is the fastest tree in the table; `txaty` gains 1.5×. Below a few thousand
-leaves of cheap content, parallel construction is *slower* for both — 6.5× slower for
-`merkletree` at n=16 — which is why it is off by default in both libraries. The option
+leaves of cheap content, parallel construction is *slower* for both, 6.5× slower for
+`merkletree` at n=16, which is why it is off by default in both libraries. The option
 covers every construction `merkletree` offers: the RFC 6962 mode forks its unbalanced
 interior across goroutines the same way, so an RFC build of 65,536 short leaves drops
 from 10.4 ms serial to 2.1 ms.
@@ -163,7 +162,7 @@ each level's digests into one buffer rather than allocating per node. It is mid-
 total bytes: a `Node` carries `Parent`, `Left`, `Right` and `Tree` pointers alongside its
 hash, where the flat-array implementations keep bare levels of digests. That is what pays
 for tree walking, rebuilding and serialization, and on a build-and-take-the-root workload
-it is pure overhead — but it is 1.4× `wealdtech`, not the blowout the pointer graph might
+it is pure overhead, but it is 1.4× `wealdtech`, not the blowout the pointer graph might
 suggest.
 
 ## A single proof, worst-case leaf
@@ -178,7 +177,7 @@ ns/op. This is the axis where library choice actually decides the complexity cla
 | 65,536 | 129,730 | 135 | 76.3 | **16.7** | 128 | 91,293 | 1,131 | 341 |
 
 Two libraries scan: `merkletree` without `WithLeafIndex`, and `wealdtech`. Both are O(n)
-per proof and both cost ~100µs per proof at 65,536 leaves — roughly a thousand times the
+per proof and both cost ~100µs per proof at 65,536 leaves, roughly a thousand times the
 cost of the tree walk they are wrapping. `wealdtech` has no opt-out; `merkletree` does.
 
 With `WithLeafIndex` the scan disappears and `merkletree` is flat at ~135ns, slightly
@@ -189,8 +188,8 @@ in the comparison at every size by roughly 5× over its own by-index form.
 
 ## The whole proof set
 
-ns per proof, generating every proof in the tree — the operation where an O(n) lookup
-becomes O(n²):
+ns per proof, generating every proof in the tree, which is the operation where an O(n)
+lookup becomes O(n²):
 
 | n | cbergoon scan | cbergoon index | cbergoon by-index | cbergoon append | txaty | txaty ProofGen | wealdtech | onrik | jvsteiner |
 |---|---|---|---|---|---|---|---|---|---|
@@ -199,7 +198,7 @@ becomes O(n²):
 | 4,096 | 3,762 | 166 | 116 | **25.4** | 158 | 241 | 2,972 | 1,171 | 322 |
 
 At 4,096 leaves the full set costs 15.4 ms by scan, 0.47 ms by index and 0.10 ms
-appending into two reused buffers — a 148× spread that is entirely lookup and
+appending into two reused buffers, a 148× spread that is entirely lookup and
 allocation, not hashing. Extrapolating the scan to 100,000 leaves gives roughly 10
 seconds for a full proof set, which is the gap the `txaty` project's published
 comparisons were measuring. The append column allocates nothing at all: every proof
@@ -211,7 +210,7 @@ n=4,096). Precomputation is not obviously worth it in that implementation.
 
 ## Verification
 
-ns/op, checking one proof. The first column is the like-for-like comparison — a proof
+ns/op, checking one proof. The first column is the like-for-like comparison, a proof
 replayed against a root with no tree involved, which is what the last three columns do:
 
 | n | **cbergoon `VerifyProof`** | txaty | wealdtech | onrik | cbergoon `VerifyContent` |
@@ -223,9 +222,9 @@ replayed against a root with no tree involved, which is what the last three colu
 
 `VerifyProof` is the fastest standalone verification in the comparison from 256 leaves
 up, and allocates a flat 2 objects and 56 bytes at every size where the others grow with
-tree depth — 32 objects for `onrik` at 65,536. The replay carries one hasher and one
+tree depth (32 objects for `onrik` at 65,536). The replay carries one hasher and one
 buffer from the leaf to the root, sliding each level's digest down over the last, so its
-working set is one digest wide however tall the tree — and the pair is recycled through
+working set is one digest wide however tall the tree, and the pair is recycled through
 a pool across calls, so what remains on the profile is hashing the content and little
 else.
 
@@ -256,13 +255,13 @@ range:
 
 All the read paths are race-clean under `-race`.
 
-**The append form is the only one that actually scales, and it is not close.** Each
-goroutine hands `AppendMerklePathByIndex` its own two buffers, so a proof touches no
-shared state at all — no lock, no allocator, no garbage collector — and eighteen
-goroutines run 16.4× the speed of one, serving a proof every 2.9 ns. That is 28× the
-throughput of the next-best form in this table and 50× the next-best library.
+The append form is the only one that actually scales, and it is not close. Each goroutine
+hands `AppendMerklePathByIndex` its own two buffers, so a proof touches no shared state at
+all: no lock, no allocator, no garbage collector. Eighteen goroutines run 16.4× the speed
+of one, serving a proof every 2.9 ns. That is 28× the throughput of the next-best form in
+this table and 50× the next-best library.
 
-**txaty does not scale, and gets worse past four goroutines.** Its leaf lookup takes an
+txaty does not scale, and gets worse past four goroutines. Its leaf lookup takes an
 exclusive `sync.Mutex` (`proof.go`, `m.leafMapMu.Lock()`) around a map that is only read
 once the tree is built. Four goroutines help; eighteen contend, and throughput falls back
 toward the single-goroutine figure. A `sync.RWMutex`, or no lock at all given the map
@@ -270,19 +269,19 @@ is immutable after construction, would remove it. This is the one place in the c
 where a library's single-threaded ranking actively misleads: `txaty` is quick on one
 goroutine and close to flat on many.
 
-**wealdtech scales almost linearly** — an O(n) scan is pure CPU with no shared state, so
-it parallelizes perfectly. It is still ~10× slower than `merkletree`'s slice-returning
+wealdtech scales almost linearly, since an O(n) scan is pure CPU with no shared state and
+parallelizes perfectly. It is still ~10× slower than `merkletree`'s slice-returning
 forms in absolute terms at 18 goroutines, and 300× the append form, because scaling a
 bad algorithm well is not the same as being fast.
 
-**The slice-returning forms are allocator-bound, which is what the append form removes.**
+The slice-returning forms are allocator-bound, which is what the append form removes.
 Nothing on any `merkletree` read path takes a lock: the leaf index is written during
 construction and only read afterwards, which is why `WithLeafIndex` is built eagerly
 rather than lazily. What caps `GetMerklePathByIndex` and the leaf-index lookup is that
-each proof returns two freshly allocated slices — about 500 B/op, which at these rates
+each proof returns two freshly allocated slices, about 500 B/op, which at these rates
 makes the garbage collector the shared resource every goroutine queues on, and holds
-their scaling near 2×. `AppendMerklePath` and `AppendMerklePathByIndex` exist precisely
-to move that allocation to the caller, where it happens once instead of per proof.
+their scaling near 2×. `AppendMerklePath` and `AppendMerklePathByIndex` exist to move
+that allocation to the caller, where it happens once instead of per proof.
 
 ## How much of this survives expensive content
 
@@ -302,13 +301,13 @@ an artifact of tiny content (ns/op):
 | jvsteiner | 1,105,700 | 2,128,300 | 20,361,000 |
 | spread, fastest to slowest | 2.16× | 1.30× | **1.03×** |
 
-**At 16 KiB leaves the choice of library stops mattering for construction.** All six land
+At 16 KiB leaves the choice of library stops mattering for construction. All six land
 within 3% of each other at about 3.4 GB/s, because all six are doing the same SHA-256
-over the same bytes and nothing else is visible. The 2.16× spread at 32 bytes — including
-`jvsteiner` looking twice as slow as everyone else — is a measurement of per-node
+over the same bytes and nothing else is visible. The 2.16× spread at 32 bytes, including
+`jvsteiner` looking twice as slow as everyone else, is a measurement of per-node
 overhead, and per-node overhead is only worth arguing about when leaves are small.
 
-**Parallelism is the exception, and it grows the other way.** It is the one thing that
+Parallelism is the exception, and it grows the other way. It is the one thing that
 changes the SHA-256 bill rather than the overhead around it, so the more content costs,
 the more it buys:
 
@@ -336,9 +335,10 @@ count where parallel overtakes serial:
 right, and is specific to cheap content: at 1 KiB the threshold drops to somewhere under
 256 leaves, and at 16 KiB there is no threshold worth finding.
 
-**Looking a leaf up by value gets much worse; by position it does not change.** Locating
-content by value means hashing the query, so a lookup pays one `CalculateHash` whatever
-the index behind it looks like. Addressing by position pays nothing (ns/op, n=4,096):
+Looking a leaf up by value gets much worse as content grows; by position it does not
+change. Locating content by value means hashing the query, so a lookup pays one
+`CalculateHash` whatever the index behind it looks like. Addressing by position pays
+nothing (ns/op, n=4,096):
 
 | | 32 B | 1 KiB | 16 KiB |
 |---|---|---|---|
@@ -349,9 +349,9 @@ the index behind it looks like. Addressing by position pays nothing (ns/op, n=4,
 
 At seven byte leaves the difference between addressing a leaf by value and by position is
 invisible. At 16 KiB it is **95×**, and `GetMerklePathByIndex` is the only sensible choice.
-`txaty` tracks `merkletree`'s leaf index almost exactly, for the same reason — both hash
-the block — and it has no by-position equivalent in `ModeTreeBuild`, so that escape hatch
-is not available there.
+`txaty` tracks `merkletree`'s leaf index almost exactly, for the same reason, since both
+hash the block, and it has no by-position equivalent in `ModeTreeBuild`, so that escape
+hatch is not available there.
 
 Verification converges the same way: `merkletree` is 1.34× faster than `txaty` at 32 byte
 leaves, 1.22× at 1 KiB and 1.05× at 16 KiB, as the single `CalculateHash` on the content
@@ -369,8 +369,8 @@ is not. At 65,536 leaves (depth 16):
 
 `GetMerklePath` returns `[]int64`, spending eight bytes per level to carry one bit, where
 `txaty` packs the whole path into a single `uint32` bitfield. Identical information, 124
-bytes apart, and the gap grows with depth. It costs nothing in memory or time locally —
-it is a transmission and storage cost for anyone shipping proofs over a network — but it
+bytes apart, and the gap grows with depth. It costs nothing in memory or time locally,
+it is a transmission and storage cost for anyone shipping proofs over a network, but it
 is real, and changing it would break the signature of `GetMerklePath`.
 
 ## Choosing on this evidence
@@ -379,25 +379,25 @@ The scorecard at the top ranks the axes. What it cannot express is that the axes
 equally decisive, and which ones matter is settled by the workload rather than by the
 table:
 
-- **Cheap content, build once, take the root.** Nothing here separates the libraries
-  except `jvsteiner`, and the decision should be made on API and maintenance instead.
-- **Expensive content.** Only parallelism matters, and only two libraries have it. At
+- Cheap content, build once, take the root. Nothing here separates the libraries except
+  `jvsteiner`, and the decision should be made on API and maintenance instead.
+- Expensive content. Only parallelism matters, and only two libraries have it. At
   16 KiB leaves it is worth 12×, which is larger than every other difference in this
   document combined.
-- **Serving proofs.** Addressing the leaf is the whole decision: without
+- Serving proofs. Addressing the leaf is the whole decision: without
   `GetMerklePathByIndex`, `AppendMerklePathByIndex` or `WithLeafIndex`, `merkletree` and
   `wealdtech` are quadratic over a full proof set. For expensive content, addressing by
   position rather than by value is worth another 95×, and reusing buffers through the
   `Append` forms another ~5× on top of that.
-- **Many goroutines.** `txaty`'s exclusive lock on the proof path makes it the wrong
-  choice regardless of its single-threaded numbers; `merkletree`'s `Append` forms are the
-  only proof path here that scales with the goroutine count.
-- **Roots that are published or stored.** The odd node policy decides interoperability,
-  and no benchmark is relevant until that agrees.
+- Many goroutines. `txaty`'s exclusive lock on the proof path makes it the wrong choice
+  regardless of its single-threaded numbers; `merkletree`'s `Append` forms are the only
+  proof path here that scales with the goroutine count.
+- Roots that are published or stored. The odd node policy decides interoperability, and
+  no benchmark is relevant until that agrees.
 
 `merkletree`'s weakest remaining result is that proofs carry 124 more bytes than they
-need at depth 16. The other weakness earlier revisions recorded here — per-proof
-allocation as the ceiling on concurrent throughput — still applies to the slice-returning
+need at depth 16. The other weakness earlier revisions recorded here, per-proof
+allocation as the ceiling on concurrent throughput, still applies to the slice-returning
 forms, and no longer applies at all to a caller using `AppendMerklePath` or
 `AppendMerklePathByIndex` with reused buffers.
 
@@ -422,8 +422,8 @@ forms, and no longer applies at all to a caller using `AppendMerklePath` or
 - The concurrency axis reports `ns/op` under `testing.B.RunParallel`, so lower is higher
   throughput. Speedups are taken from the same benchmark at `-cpu=1` against `-cpu=18`,
   rather than by comparing against a differently shaped single-threaded benchmark.
-- The `cbergoon-append` rows reuse two caller-owned slices across proofs — per goroutine,
-  on the concurrency axis — which is the documented use of `AppendMerklePathByIndex`.
+- The `cbergoon-append` rows reuse two caller-owned slices across proofs, per goroutine
+  on the concurrency axis, which is the documented use of `AppendMerklePathByIndex`.
   Every other row returns freshly allocated proofs, because that is all the other
   libraries' APIs offer.
 

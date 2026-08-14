@@ -43,7 +43,7 @@ as a leaf: a two leaf tree whose leaves are the two subtree hashes of a four lea
 reproduces the original root, and verifies.
 
 NewTreeWithOptions with WithRFC6962 builds the tree specified by RFC 6962 section 2.1
-instead, which closes both. Leaf and interior hashes carry distinct one byte prefixes,
+instead, which avoids both. Leaf and interior hashes carry distinct one byte prefixes,
 and node lists are split at the largest power of two below their length rather than
 padded, so every distinct leaf sequence has a distinct root.
 
@@ -93,9 +93,9 @@ allocating at all:
 
 # Verifying a proof without the tree
 
-VerifyProof checks an audit path against a root and needs no tree, which is the operation
-a verifier performs when it holds a root from a source it trusts and a proof from one it
-does not:
+VerifyProof checks an audit path against a root and needs no tree, which is what a
+verifier does when it holds a root from a source it trusts and a proof from one it does
+not:
 
 	ok, err := merkletree.VerifyProof(content, path, index, root, merkletree.WithRFC6962())
 
@@ -105,9 +105,9 @@ hold the tree can call the MerkleTree.VerifyProof method and skip restating the 
 
 This is a different question from MerkleTree.VerifyContent, which walks a tree it already
 has and recomputes every hash on the path from its own stored nodes. VerifyContent is the
-stronger check where the tree is available; VerifyProof is the only one available where
-it is not. See VerifyProof for what a verified proof does and does not establish, and why
-WithRFC6962 matters more for proofs from untrusted sources.
+stronger check when you have the tree; VerifyProof is what you use when you do not. See
+VerifyProof for what a verified proof does and does not establish, and why WithRFC6962
+matters more for proofs from untrusted sources.
 
 # Serialization
 
