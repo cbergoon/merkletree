@@ -53,6 +53,62 @@ The constructions produce different roots and are not interchangeable, so pick o
 the tree is created. See WithRFC6962 for the details, including how it relates to
 Certificate Transparency.
 
+# Parallel construction
+
+WithParallelism builds a tree across several goroutines. It is off by default, because
+it calls Content.CalculateHash concurrently and only the caller knows whether their
+implementation is safe for that.
+
+	t, err := merkletree.NewTreeWithOptions(list, merkletree.WithParallelism(0))
+
+The root is unaffected: results are written to slots fixed by position, so a tree built
+in parallel is byte for byte the tree built serially. What it is worth depends on what
+CalculateHash costs, and is large when content is expensive to hash and negative on a
+small tree of cheap content. See WithParallelism.
+
+# Proof lookup
+
+GetMerklePath and VerifyContent locate their content by scanning every leaf, which makes
+a single proof cost O(n) in the leaf count even though the walk it performs afterwards is
+only O(log n), and a full set of proofs O(n²). Two options avoid the scan.
+
+WithLeafIndex records a lookup table from leaf hash to leaf position at construction, so
+a lookup becomes one hash and one map probe whatever the leaf count:
+
+	t, err := merkletree.NewTreeWithOptions(list, merkletree.WithLeafIndex())
+
+It costs memory proportional to the leaf count and changes how content is located, from
+Content.Equals to a comparison of hashes. The Content interface already requires the two
+to agree, so any implementation honoring that contract gets the same leaf either way. See
+WithLeafIndex.
+
+GetMerklePathByIndex takes the position in Leafs directly, needs no option and no extra
+memory, and is the better choice when the caller already tracks which item is which.
+
+AppendMerklePath and AppendMerklePathByIndex produce the same proofs into caller
+supplied slices, so a proof server reusing its buffers generates proofs without
+allocating at all:
+
+	path, index, err = t.AppendMerklePathByIndex(path[:0], index[:0], i)
+
+# Verifying a proof without the tree
+
+VerifyProof checks an audit path against a root and needs no tree, which is the operation
+a verifier performs when it holds a root from a source it trusts and a proof from one it
+does not:
+
+	ok, err := merkletree.VerifyProof(content, path, index, root, merkletree.WithRFC6962())
+
+The options must describe the construction the proof was produced under. A verifier that
+has no Content implementation can use VerifyProofWithDigest instead, and one that does
+hold the tree can call the MerkleTree.VerifyProof method and skip restating the options.
+
+This is a different question from MerkleTree.VerifyContent, which walks a tree it already
+has and recomputes every hash on the path from its own stored nodes. VerifyContent is the
+stronger check where the tree is available; VerifyProof is the only one available where
+it is not. See VerifyProof for what a verified proof does and does not establish, and why
+WithRFC6962 matters more for proofs from untrusted sources.
+
 # Serialization
 
 A tree holds reference cycles - a Node points back at its Tree and at its Parent - so it

@@ -1341,7 +1341,7 @@ func TestRegisterContentPanics(t *testing.T) {
 
 // contentTypeName2 exposes the name a content value would be registered under.
 func contentTypeName2(c Content) string {
-	name, _, err := marshalRegisteredContent(c)
+	name, _, err := marshalRegisteredContent(c, &contentTypeCache{})
 	if err != nil {
 		panic(err)
 	}

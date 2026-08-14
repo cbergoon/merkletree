@@ -257,20 +257,34 @@ func contentTypeName(rt reflect.Type) string {
 	return prefix + rt.PkgPath() + "." + rt.Name()
 }
 
+// contentTypeCache remembers the last content type resolved against a registry. A
+// tree overwhelmingly holds one concrete type, so with the cache the registry lock
+// and lookup are paid once per encode or decode rather than once per leaf. The zero
+// value is an empty cache; it is single-use state for one loop, never shared.
+type contentTypeCache struct {
+	name string
+	rt   reflect.Type
+}
+
 // marshalRegisteredContent encodes a single content item along with the name needed to
 // rebuild its concrete type.
-func marshalRegisteredContent(c Content) (string, []byte, error) {
+func marshalRegisteredContent(c Content, cache *contentTypeCache) (string, []byte, error) {
 	rt := reflect.TypeOf(c)
 	if rt == nil {
 		return "", nil, fmt.Errorf("%w: tree contains nil content", ErrNoContentType)
 	}
 
-	contentRegistry.RLock()
-	name, ok := contentRegistry.byType[rt]
-	contentRegistry.RUnlock()
+	name := cache.name
+	if rt != cache.rt || cache.name == "" {
+		contentRegistry.RLock()
+		var ok bool
+		name, ok = contentRegistry.byType[rt]
+		contentRegistry.RUnlock()
 
-	if !ok {
-		return "", nil, fmt.Errorf("%w: %s; call merkletree.RegisterContent to make it serializable, or use MarshalWith", ErrNoContentType, rt)
+		if !ok {
+			return "", nil, fmt.Errorf("%w: %s; call merkletree.RegisterContent to make it serializable, or use MarshalWith", ErrNoContentType, rt)
+		}
+		cache.name, cache.rt = name, rt
 	}
 
 	bm, ok := c.(encoding.BinaryMarshaler)
@@ -285,18 +299,25 @@ func marshalRegisteredContent(c Content) (string, []byte, error) {
 }
 
 // unmarshalRegisteredContent rebuilds a concrete content value from its recorded name
-// and payload.
-func unmarshalRegisteredContent(name string, payload []byte) (Content, error) {
+// and payload. The cache carries the last resolved name across the records of one
+// decode; the binary decoder interns repeated names, so the comparison is usually a
+// pointer match.
+func unmarshalRegisteredContent(name string, payload []byte, cache *contentTypeCache) (Content, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: payload carries no content type names, which means it was written by MarshalWith; decode it with UnmarshalWith", ErrNoContentType)
 	}
 
-	contentRegistry.RLock()
-	rt, ok := contentRegistry.byName[name]
-	contentRegistry.RUnlock()
+	rt := cache.rt
+	if name != cache.name || rt == nil {
+		contentRegistry.RLock()
+		var ok bool
+		rt, ok = contentRegistry.byName[name]
+		contentRegistry.RUnlock()
 
-	if !ok {
-		return nil, fmt.Errorf("%w: %q; call merkletree.RegisterContent for that type before unmarshaling", ErrNoContentType, name)
+		if !ok {
+			return nil, fmt.Errorf("%w: %q; call merkletree.RegisterContent for that type before unmarshaling", ErrNoContentType, name)
+		}
+		cache.name, cache.rt = name, rt
 	}
 
 	isPointer := rt.Kind() == reflect.Pointer
@@ -311,8 +332,15 @@ func unmarshalRegisteredContent(name string, payload []byte) (Content, error) {
 		return nil, fmt.Errorf("%w: %s does not implement encoding.BinaryUnmarshaler", ErrNoContentType, pv.Type())
 	}
 	// UnmarshalBinary implementations are permitted to retain the slice they are
-	// handed, and payload points into the caller's buffer, so hand over a copy.
-	if err := bu.UnmarshalBinary(bytes.Clone(payload)); err != nil {
+	// handed, so payload has to be one no one else holds. Both decoders already
+	// produce exactly that: the binary reader carves each record its own capped
+	// region of a decode-wide arena, and encoding/json decodes base64 into a fresh
+	// slice. The treeData carrying them is transient and is dropped once the tree is
+	// built, so there is nothing left to alias. Copying again here duplicated every
+	// content payload on the way in, which on a large tree is one wasted allocation
+	// per leaf. The UnmarshalWith path has always handed record.Payload straight to
+	// the caller's decoder on the same reasoning.
+	if err := bu.UnmarshalBinary(payload); err != nil {
 		return nil, fmt.Errorf("merkletree: unmarshaling content of type %q: %w", name, err)
 	}
 
@@ -415,8 +443,12 @@ func (m MerkleTree) snapshot(enc ContentMarshalFunc, opts ...MarshalOption) (*tr
 		Sort:         m.sort,
 		RFC6962:      m.rfc6962,
 		MerkleRoot:   bytes.Clone(m.merkleRoot),
+		// Sized to the leaf count up front; at most one entry, the padding copy, goes
+		// unused, where growing by append reallocates log n times on a large tree.
+		Contents: make([]contentRecord, 0, len(m.Leafs)),
 	}
 
+	var cache contentTypeCache
 	for _, l := range m.Leafs {
 		// Skip the padding copy buildWithContent appends for an odd content count.
 		// It is regenerated on rebuild; encoding it would promote it to real content
@@ -432,7 +464,7 @@ func (m MerkleTree) snapshot(enc ContentMarshalFunc, opts ...MarshalOption) (*tr
 			td.Contents = append(td.Contents, contentRecord{Payload: payload})
 			continue
 		}
-		typeName, payload, err := marshalRegisteredContent(l.C)
+		typeName, payload, err := marshalRegisteredContent(l.C, &cache)
 		if err != nil {
 			return nil, err
 		}
@@ -470,6 +502,7 @@ func (td *treeData) tree(dec ContentUnmarshalFunc, opts ...UnmarshalOption) (*Me
 	}
 
 	cs := make([]Content, 0, len(td.Contents))
+	var cache contentTypeCache
 	for i, record := range td.Contents {
 		var (
 			c   Content
@@ -479,7 +512,7 @@ func (td *treeData) tree(dec ContentUnmarshalFunc, opts ...UnmarshalOption) (*Me
 			if c, err = dec(record.Payload); err != nil {
 				return nil, fmt.Errorf("merkletree: unmarshaling content at index %d: %w", i, err)
 			}
-		} else if c, err = unmarshalRegisteredContent(record.Type, record.Payload); err != nil {
+		} else if c, err = unmarshalRegisteredContent(record.Type, record.Payload, &cache); err != nil {
 			return nil, err
 		}
 		if c == nil {
@@ -643,7 +676,23 @@ func (m *MerkleTree) adoptNodes() {
 // Encoding the same tree twice always produces identical bytes, so payloads can be
 // compared or content-addressed directly.
 func (td *treeData) marshalBinary() []byte {
+	// The wire size is exactly computable before writing a byte, so the buffer is
+	// grown to it once. Without this the buffer doubles its way up, which on a large
+	// tree re-copies the payload log n times and leaves the final allocation up to
+	// twice the size it needs to be.
+	size := len(serializationMagic) +
+		uvarintLen(uint64(td.Version)) +
+		uvarintLen(uint64(len(td.HashStrategy))) + len(td.HashStrategy) +
+		2 +
+		uvarintLen(uint64(len(td.MerkleRoot))) + len(td.MerkleRoot) +
+		uvarintLen(uint64(len(td.Contents)))
+	for _, record := range td.Contents {
+		size += uvarintLen(uint64(len(record.Type))) + len(record.Type) +
+			uvarintLen(uint64(len(record.Payload))) + len(record.Payload)
+	}
+
 	var buf bytes.Buffer
+	buf.Grow(size)
 	buf.WriteString(serializationMagic)
 	writeUvarint(&buf, uint64(td.Version))
 	writeBytes(&buf, []byte(td.HashStrategy))
@@ -673,7 +722,7 @@ func unmarshalTreeData(data []byte) (*treeData, error) {
 	if len(data) < len(serializationMagic) || string(data[:len(serializationMagic)]) != serializationMagic {
 		return nil, fmt.Errorf("%w: missing %q header", ErrCorruptData, serializationMagic)
 	}
-	r := &binaryReader{r: bytes.NewReader(data[len(serializationMagic):])}
+	r := &binaryReader{data: data[len(serializationMagic):]}
 
 	version, err := r.uvarint()
 	if err != nil {
@@ -685,13 +734,13 @@ func unmarshalTreeData(data []byte) (*treeData, error) {
 
 	td := &treeData{Version: int(version)}
 
-	strategy, err := r.bytes()
+	strategy, err := r.view()
 	if err != nil {
 		return nil, fmt.Errorf("%w: reading hash strategy: %w", ErrCorruptData, err)
 	}
 	td.HashStrategy = string(strategy)
 
-	sortFlag, err := r.r.ReadByte()
+	sortFlag, err := r.readByte()
 	if err != nil {
 		return nil, fmt.Errorf("%w: reading sort flag: %w", ErrCorruptData, err)
 	}
@@ -700,7 +749,7 @@ func unmarshalTreeData(data []byte) (*treeData, error) {
 	}
 	td.Sort = sortFlag == 1
 
-	rfcFlag, err := r.r.ReadByte()
+	rfcFlag, err := r.readByte()
 	if err != nil {
 		return nil, fmt.Errorf("%w: reading RFC 6962 flag: %w", ErrCorruptData, err)
 	}
@@ -709,7 +758,9 @@ func unmarshalTreeData(data []byte) (*treeData, error) {
 	}
 	td.RFC6962 = rfcFlag == 1
 
-	if td.MerkleRoot, err = r.bytes(); err != nil {
+	// The root is compared once while the tree is rebuilt and then dropped with the
+	// treeData carrying it, so viewing it in place is safe; nothing retains it.
+	if td.MerkleRoot, err = r.view(); err != nil {
 		return nil, fmt.Errorf("%w: reading Merkle root: %w", ErrCorruptData, err)
 	}
 
@@ -718,52 +769,137 @@ func unmarshalTreeData(data []byte) (*treeData, error) {
 		return nil, fmt.Errorf("%w: reading content count: %w", ErrCorruptData, err)
 	}
 	// Each record costs at least two length bytes, so a count larger than the bytes
-	// remaining cannot be honest. This bounds the allocation below.
-	if count > uint64(r.r.Len()) {
-		return nil, fmt.Errorf("%w: content count %d exceeds the %d bytes remaining", ErrCorruptData, count, r.r.Len())
+	// remaining cannot be honest. This bounds the allocations below.
+	if count > uint64(r.remaining()) {
+		return nil, fmt.Errorf("%w: content count %d exceeds the %d bytes remaining", ErrCorruptData, count, r.remaining())
 	}
 
 	td.Contents = make([]contentRecord, 0, count)
+	// Every record carries its type name, and in practice a tree holds one content
+	// type, so the same name is repeated for every leaf. Interning them means one
+	// string for the whole payload rather than one per record. Indexing a map with
+	// string(byteSlice) does not allocate, so a repeat name costs only the lookup.
+	interned := make(map[string]string, 1)
+	// One arena serves every payload. UnmarshalBinary implementations are permitted
+	// to retain the slice they are handed, so a payload must not alias the caller's
+	// data - but copying each into its own allocation cost one per record. Carving
+	// copies out of a single arena keeps the no-aliasing guarantee at one allocation
+	// for the whole decode. Each carve is capped at its own length, so appending to
+	// one payload cannot reach the record stored after it, and the contents all live
+	// and die with the tree they decode into, so the shared backing pins nothing
+	// that was not already pinned. The remaining bytes bound the payload bytes, so
+	// the arena never grows and every carve stays inside the one allocation.
+	arena := make([]byte, 0, r.remaining())
 	for i := uint64(0); i < count; i++ {
-		typeName, err := r.bytes()
+		typeName, err := r.view()
 		if err != nil {
 			return nil, fmt.Errorf("%w: reading content type at index %d: %w", ErrCorruptData, i, err)
 		}
-		payload, err := r.bytes()
+		name, ok := interned[string(typeName)]
+		if !ok {
+			name = string(typeName)
+			interned[name] = name
+		}
+		view, err := r.view()
 		if err != nil {
 			return nil, fmt.Errorf("%w: reading content payload at index %d: %w", ErrCorruptData, i, err)
 		}
-		td.Contents = append(td.Contents, contentRecord{Type: string(typeName), Payload: payload})
+		off := len(arena)
+		arena = append(arena, view...)
+		td.Contents = append(td.Contents, contentRecord{Type: name, Payload: arena[off:len(arena):len(arena)]})
 	}
 
-	if r.r.Len() != 0 {
-		return nil, fmt.Errorf("%w: %d trailing bytes after the last content record", ErrCorruptData, r.r.Len())
+	if r.remaining() != 0 {
+		return nil, fmt.Errorf("%w: %d trailing bytes after the last content record", ErrCorruptData, r.remaining())
 	}
 	return td, nil
 }
 
-// binaryReader reads the length-prefixed pieces of the wire format.
+// binaryReader reads the length-prefixed pieces of the wire format. It is a cursor
+// over the payload slice rather than a bytes.Reader: every read is a bounds check and
+// a reslice with no interface calls, and a field that is only inspected rather than
+// kept - a type name about to be interned, the recorded root - can be viewed in place
+// instead of copied out.
 type binaryReader struct {
-	r *bytes.Reader
+	data []byte
+	off  int
 }
 
-func (br *binaryReader) uvarint() (uint64, error) {
-	return binary.ReadUvarint(br.r)
+// remaining reports how many bytes are left to read.
+func (br *binaryReader) remaining() int {
+	return len(br.data) - br.off
 }
 
-func (br *binaryReader) bytes() ([]byte, error) {
-	n, err := binary.ReadUvarint(br.r)
+func (br *binaryReader) readByte() (byte, error) {
+	if br.off >= len(br.data) {
+		return 0, io.EOF
+	}
+	b := br.data[br.off]
+	br.off++
+	return b, nil
+}
+
+// view returns the next length-prefixed field as a subslice of the payload, without
+// copying. The result aliases the caller's input; anything that outlives the decode
+// must copy what it keeps.
+func (br *binaryReader) view() ([]byte, error) {
+	n, err := br.uvarint()
 	if err != nil {
 		return nil, err
 	}
-	if n > uint64(br.r.Len()) {
-		return nil, fmt.Errorf("length %d exceeds the %d bytes remaining", n, br.r.Len())
+	if n > uint64(br.remaining()) {
+		return nil, fmt.Errorf("length %d exceeds the %d bytes remaining", n, br.remaining())
 	}
-	b := make([]byte, n)
-	if _, err := io.ReadFull(br.r, b); err != nil {
-		return nil, err
-	}
+	b := br.data[br.off : br.off+int(n) : br.off+int(n)]
+	br.off += int(n)
 	return b, nil
+}
+
+// uvarint reads one uvarint, rejecting any encoding that is not the shortest one for
+// the value it carries.
+//
+// binary.ReadUvarint accepts padded forms - 0x80 0x00 decodes to zero just as 0x00
+// does - which would make the wire format malleable: a payload could be rewritten
+// into different bytes that decode to exactly the same tree. Since marshalBinary is
+// documented as deterministic so that payloads can be compared or content addressed,
+// the decoder has to hold up the other half of that guarantee.
+func (br *binaryReader) uvarint() (uint64, error) {
+	var x uint64
+	var s uint
+	for i := 0; ; i++ {
+		b, err := br.readByte()
+		if err != nil {
+			if i > 0 && errors.Is(err, io.EOF) {
+				err = io.ErrUnexpectedEOF
+			}
+			return 0, err
+		}
+		if i == binary.MaxVarintLen64-1 && b > 1 {
+			return 0, errors.New("uvarint overflows a 64 bit value")
+		}
+		if b < 0x80 {
+			// The final byte holds the most significant group. A zero group means
+			// the same value had a shorter encoding, so this one is not canonical.
+			if i > 0 && b == 0 {
+				return 0, errors.New("uvarint is not minimally encoded")
+			}
+
+			return x | uint64(b)<<s, nil
+		}
+		x |= uint64(b&0x7f) << s
+		s += 7
+	}
+}
+
+// uvarintLen returns how many bytes PutUvarint spends on v, so marshalBinary can size
+// its buffer exactly before writing.
+func uvarintLen(v uint64) int {
+	n := 1
+	for v >= 0x80 {
+		v >>= 7
+		n++
+	}
+	return n
 }
 
 func writeUvarint(buf *bytes.Buffer, v uint64) {
